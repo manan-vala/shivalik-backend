@@ -1,53 +1,102 @@
-# Backend-Shivalik
+# Backend - Shivalik
 
-Installation
-Clone the repository:
+A Django-based backend application providing REST APIs.
+
+## Installation
+
+### 1. Clone the repository
+
+```bash
 git clone https://github.com/swciitg/backend-shivalik.git
-cd  backend-shivalik
-Create a virtual environment:
+cd backend-shivalik
+```
+
+### 2. Create a virtual environment
+
+```bash
 python -m venv venv
-Activate the virtual environment:
+```
 
-Windows
+### 3. Activate the virtual environment
 
+**Windows**
+
+```bash
 venv\Scripts\activate
+```
 
-Linux / macOS
+**Linux / macOS**
 
+```bash
 source venv/bin/activate
-Install dependencies:
+```
+
+### 4. Install dependencies
+
+```bash
 pip install -r requirements.txt
-Create a .env file using .env.example and configure the required environment variables.
-Apply migrations:
+```
+
+### 5. Configure environment variables
+
+Create a `.env` file using `.env.example` and configure the required environment variables.
+
+### 6. Apply migrations
+
+```bash
 python manage.py migrate
-Start the development server:
+```
+
+### 7. Start the development server
+
+```bash
 python manage.py runserver
+```
 
 The backend will be available at:
 
+```
 http://127.0.0.1:8000/
-Project Structure
-backend/
+```
+
+---
+
+## Project Structure
+
+```text
+backend-shivalik/
 ├── api/
 ├── config/
 ├── manage.py
 ├── requirements.txt
 ├── .env.example
 └── README.md
-Useful Commands
+```
 
-Run the development server:
+---
 
+## Useful Commands
+
+### Run the development server
+
+```bash
 python manage.py runserver
+```
 
-Create migrations:
+### Create migrations
 
+```bash
 python manage.py makemigrations
+```
 
-Apply migrations:
+### Apply migrations
 
+```bash
 python manage.py migrate
+```
 
-Create a superuser:
+### Create a superuser
 
+```bash
 python manage.py createsuperuser
+```
