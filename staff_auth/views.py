@@ -5,10 +5,15 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Employee
 from .serializers import EmployeeSerializer, CustomTokenObtainPairSerializer
 
-class EmployeeRegistrationView(generics.CreateAPIView):
+class EmployeeListCreateView(generics.ListCreateAPIView):
     queryset = Employee.objects.all()
     serializer_class = EmployeeSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
+
+class EmployeeRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Employee.objects.all()
+    serializer_class = EmployeeSerializer
+    permission_classes = [IsAdminUser]
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer

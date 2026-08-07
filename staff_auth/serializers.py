@@ -8,14 +8,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = Employee
         fields = ['id', 'email', 'name', 'role', 'phone', 'address', 'salary', 'department', 'contract', 'status', 'password']
         extra_kwargs = {
-            'password': {'write_only': True},
+            'password': {'write_only': True, 'required': False}, # Password is not strictly required on creation
             'status': {'read_only': True},
             'contract': {'read_only': True}, # Usually handled separately or multipart
         }
 
     def create(self, validated_data):
+        password = validated_data.pop('password', 'password123')
         # Default status is 'Pending' via model definition
-        user = Employee.objects.create_user(**validated_data)
+        user = Employee.objects.create_user(password=password, **validated_data)
         return user
 
 
@@ -39,8 +40,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
 
         # 2. Check if Employee is Approved
-        if self.user.status != 'Approved':
-            raise AuthenticationFailed('Your account is not approved yet. Please wait for admin approval.')
+        if self.user.status == 'Pending':
+            raise AuthenticationFailed('Login attempt recorded. Please wait for admin approval.')
+        elif self.user.status != 'Approved':
+            raise AuthenticationFailed('Your account is not approved.')
 
         # Custom claims (optional)
         data['email'] = self.user.email
