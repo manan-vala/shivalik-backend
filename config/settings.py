@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "api",
     "staff_auth",
+    "inventory",
 ]
 
 AUTH_USER_MODEL = 'staff_auth.Employee'
