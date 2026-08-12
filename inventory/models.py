@@ -104,6 +104,13 @@ class Vendor(TimeStampedModel):
     company_name = models.CharField(max_length=200)
     vendor_name = models.CharField(max_length=150)
     gst_number = models.CharField(max_length=32, unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    categories_supplied = models.CharField(max_length=255, blank=True)
+    expected_delivery_time = models.CharField(max_length=100, blank=True)
+    payment_terms = models.CharField(max_length=255, blank=True)
+    notes = models.TextField(blank=True)
     is_blocked = models.BooleanField(default=False)
 
     class Meta:
@@ -116,6 +123,15 @@ class Vendor(TimeStampedModel):
 class Book(TimeStampedModel):
     title = models.CharField(max_length=255)
     isbn = models.CharField(max_length=20, unique=True)
+    author = models.CharField(max_length=255, blank=True)
+    publisher = models.CharField(max_length=255, blank=True)
+    edition = models.CharField(max_length=50, blank=True)
+    language = models.CharField(max_length=50, blank=True)
+    category = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True)
+    cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.0)
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     min_stock = models.PositiveIntegerField(
         default=0,
         help_text="Low-stock threshold. If curr_stock drops below this, the book "
