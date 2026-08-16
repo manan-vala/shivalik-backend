@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Q2: the suite runs against real PostgreSQL. On SQLite the concurrency
+    # tests skip themselves and prove nothing (finding H-2).
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_DB: shivalik
+          POSTGRES_USER: shivalik
+          POSTGRES_PASSWORD: shivalik
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shivalik -d shivalik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key-not-used-anywhere-else
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_ENGINE: postgresql
+      DB_NAME: shivalik
+      DB_USER: shivalik
+      DB_PASSWORD: shivalik
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned to the version the team develops on (finding L-3 — two
+          # Django/Python versions have already touched this repo).
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Django system checks
+        run: python manage.py check --fail-level WARNING
+
+      - name: No un-generated migrations
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Migrations apply cleanly
+        run: python manage.py migrate --noinput
+
+      - name: Tests
+        run: pytest
