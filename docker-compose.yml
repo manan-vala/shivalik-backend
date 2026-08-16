@@ -1,0 +1,28 @@
+# Local PostgreSQL, so nobody has to install a server to satisfy Q2.
+#
+#   docker compose up -d db      # start
+#   docker compose down          # stop, keeping data
+#   docker compose down -v       # stop and wipe the volume
+#
+# Credentials match the defaults in .env.example.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: shivalik-db
+    environment:
+      POSTGRES_DB: shivalik
+      POSTGRES_USER: shivalik
+      POSTGRES_PASSWORD: shivalik
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shivalik -d shivalik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
