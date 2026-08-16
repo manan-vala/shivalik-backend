@@ -119,6 +119,121 @@ class RackEndpointTests(InventoryAPITestCase):
         self.assertEqual(self.rack.current_stock, 0)
 
 
+class WarehouseEndpointTests(InventoryAPITestCase):
+    """
+    Ported from PR #2, which built this CRUD against a duplicate Warehouse in
+    the `api` app. The assertions are the author's; only the routes and the
+    field names changed, because the models they were written for were folded
+    into `inventory` rather than merged alongside it.
+    """
+
+    def test_create_warehouse(self):
+        response = self.client.post(
+            "/api/v1/inventory/warehouses/",
+            {
+                "name": "Main Warehouse",
+                "code": "WH-001",
+                "location": "Industrial Area",
+                "description": "Primary warehouse",
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["code"], "WH-001")
+        self.assertEqual(response.data["sections_count"], 0)
+        self.assertTrue(Warehouse.objects.filter(code="WH-001").exists())
+
+    def test_sections_count_is_annotated_on_list(self):
+        response = self.client.get("/api/v1/inventory/warehouses/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(r for r in response.data["results"] if r["id"] == self.warehouse.pk)
+        self.assertEqual(row["sections_count"], 1)
+
+    def test_warehouse_code_is_unique_when_set(self):
+        self.client.post(
+            "/api/v1/inventory/warehouses/",
+            {"name": "First", "code": "WH-009"},
+            format="json",
+        )
+        response = self.client.post(
+            "/api/v1/inventory/warehouses/",
+            {"name": "Second", "code": "WH-009"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_blank_codes_do_not_collide(self):
+        """
+        The whole reason the constraint is partial. Every row that predates
+        PR #2 has `code=""`, so a plain unique index would make the second
+        warehouse ever created un-saveable.
+        """
+        Warehouse.objects.create(name="No code one")
+        Warehouse.objects.create(name="No code two")
+        response = self.client.post(
+            "/api/v1/inventory/warehouses/", {"name": "No code three"}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+
+class SectionRackCodeTests(InventoryAPITestCase):
+    def test_create_section_and_rack_with_codes(self):
+        section = self.client.post(
+            "/api/v1/inventory/sections/",
+            {
+                "warehouse": self.warehouse.pk,
+                "name": "Cold Storage",
+                "code": "SEC-01",
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(section.status_code, status.HTTP_201_CREATED, section.data)
+        self.assertEqual(section.data["warehouse_name"], "Main")
+        self.assertEqual(section.data["racks_count"], 0)
+
+        rack = self.client.post(
+            "/api/v1/inventory/racks/",
+            {
+                "section": section.data["id"],
+                "name": "Rack A1",
+                "code": "R-001",
+                "max_capacity": 100,
+            },
+            format="json",
+        )
+        self.assertEqual(rack.status_code, status.HTTP_201_CREATED, rack.data)
+        self.assertEqual(rack.data["section_name"], "Cold Storage")
+        self.assertEqual(rack.data["warehouse_name"], "Main")
+
+    def test_section_code_is_unique_within_its_warehouse_only(self):
+        other = Warehouse.objects.create(name="Second site")
+        Section.objects.create(warehouse=self.warehouse, name="S1", code="SEC-01")
+
+        clash = self.client.post(
+            "/api/v1/inventory/sections/",
+            {"warehouse": self.warehouse.pk, "name": "S2", "code": "SEC-01"},
+            format="json",
+        )
+        self.assertEqual(clash.status_code, status.HTTP_400_BAD_REQUEST)
+
+        reuse = self.client.post(
+            "/api/v1/inventory/sections/",
+            {"warehouse": other.pk, "name": "S3", "code": "SEC-01"},
+            format="json",
+        )
+        self.assertEqual(reuse.status_code, status.HTTP_201_CREATED, reuse.data)
+
+    def test_racks_count_is_annotated_on_list(self):
+        Rack.objects.create(section=self.section, name="A-9", max_capacity=10)
+        response = self.client.get("/api/v1/inventory/sections/")
+        row = next(r for r in response.data["results"] if r["id"] == self.section.pk)
+        self.assertEqual(row["racks_count"], 2)
+        # The Count must not inflate the subquery-based totals, or vice versa.
+        self.assertEqual(row["max_capacity"], 110)
+
+
 class BookEndpointTests(InventoryAPITestCase):
     def test_register_alias_creates_a_book(self):
         """L-7: `register/` delegates to `create()` rather than duplicating it."""

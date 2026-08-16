@@ -7,10 +7,36 @@ from ..models import Rack, Section, Warehouse
 
 
 class WarehouseSerializer(serializers.ModelSerializer):
+    """
+    `sections_count` is annotated by the viewset's queryset. It uses the same
+    fallback shape as `SectionSerializer` below and for the same reason: a
+    just-created warehouse has never been through the annotating queryset, and
+    a bare `IntegerField(read_only=True)` would drop the key from the POST
+    response while keeping it on GET.
+    """
+
+    sections_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Warehouse
-        fields = ["id", "name", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "code",
+            "location",
+            "description",
+            "is_active",
+            "sections_count",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def get_sections_count(self, warehouse: Warehouse) -> int:
+        annotated = getattr(warehouse, "sections_count", None)
+        if annotated is not None:
+            return annotated
+        return warehouse.sections.count()
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -28,15 +54,21 @@ class SectionSerializer(serializers.ModelSerializer):
 
     max_capacity = serializers.SerializerMethodField()
     current_stock = serializers.SerializerMethodField()
+    warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
+    racks_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
         fields = [
             "id",
             "warehouse",
+            "warehouse_name",
             "name",
+            "code",
+            "is_active",
             "max_capacity",
             "current_stock",
+            "racks_count",
         ]
 
     # -- derived fields ----------------------------------------------------
@@ -55,14 +87,29 @@ class SectionSerializer(serializers.ModelSerializer):
     def get_current_stock(self, section: Section) -> int:
         return self._total(section, "current_stock")
 
+    def get_racks_count(self, section: Section) -> int:
+        annotated = getattr(section, "racks_count", None)
+        if annotated is not None:
+            return annotated
+        return section.racks.count()
+
 
 class RackSerializer(serializers.ModelSerializer):
+    warehouse_name = serializers.CharField(
+        source="section.warehouse.name", read_only=True
+    )
+    section_name = serializers.CharField(source="section.name", read_only=True)
+
     class Meta:
         model = Rack
         fields = [
             "id",
             "section",
+            "section_name",
+            "warehouse_name",
             "name",
+            "code",
+            "is_active",
             "max_capacity",
             "current_stock",
             "last_change_date",

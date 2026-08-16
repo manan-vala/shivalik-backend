@@ -8,6 +8,12 @@ movement engine had a real name to call; ownership reverted on merge.
 Q3 answered: capacity lives on **Rack**. A Section's capacity and stock are
 totals of its racks, annotated on read (`Section.objects.with_rack_totals()`)
 rather than stored — a stored copy is a second source of truth that drifts.
+
+`code` / `location` / `description` / `is_active` came from PR #2's parallel
+`api`-app hierarchy, folded in here so there is one Warehouse in the project
+rather than two. `code` is optional-but-unique: existing rows predate it and
+have none, so a plain ``unique=True`` would collide on the empty string across
+every one of them. The partial constraints below exempt ``""`` instead.
 """
 
 from django.conf import settings
@@ -20,9 +26,32 @@ from .base import TimeStampedModel
 
 class Warehouse(TimeStampedModel):
     name = models.CharField(max_length=150, unique=True)
+    code = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text='Short operator-facing identifier, e.g. "WH-001". Optional; '
+                  "unique among warehouses that set one.",
+    )
+    location = models.CharField(max_length=255, blank=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Deactivate rather than delete: racks and ledger rows hang "
+                  "off this row and must not be orphaned.",
+    )
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["code"],
+                condition=~models.Q(code=""),
+                name="uniq_warehouse_code_when_set",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
@@ -67,6 +96,15 @@ class Section(TimeStampedModel):
         on_delete=models.CASCADE,
     )
     name = models.CharField(max_length=150)
+    code = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text='Short identifier, e.g. "SEC-01". Optional; unique within '
+                  "its warehouse among sections that set one.",
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
 
     objects = SectionQuerySet.as_manager()
 
@@ -76,6 +114,11 @@ class Section(TimeStampedModel):
             models.UniqueConstraint(
                 fields=["warehouse", "name"],
                 name="uniq_section_name_per_warehouse",
+            ),
+            models.UniqueConstraint(
+                fields=["warehouse", "code"],
+                condition=~models.Q(code=""),
+                name="uniq_section_code_per_warehouse_when_set",
             ),
         ]
 
@@ -90,6 +133,15 @@ class Rack(TimeStampedModel):
         on_delete=models.CASCADE,
     )
     name = models.CharField(max_length=150)
+    code = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text='Short identifier, e.g. "R-001". Optional; unique within '
+                  "its section among racks that set one.",
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
 
     max_capacity = models.PositiveIntegerField(
         default=0,
@@ -115,6 +167,11 @@ class Rack(TimeStampedModel):
             models.UniqueConstraint(
                 fields=["section", "name"],
                 name="uniq_rack_name_per_section",
+            ),
+            models.UniqueConstraint(
+                fields=["section", "code"],
+                condition=~models.Q(code=""),
+                name="uniq_rack_code_per_section_when_set",
             ),
             models.CheckConstraint(
                 condition=models.Q(current_stock__lte=models.F("max_capacity"))
