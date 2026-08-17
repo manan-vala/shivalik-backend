@@ -16,7 +16,12 @@ Two conventions worth calling out:
 from .location import RackSerializer, SectionSerializer, WarehouseSerializer
 from .vendor import VendorSerializer
 from .catalog import BookSerializer
-from .stock import BookInventorySerializer, StockMovementRequestSerializer
+from .stock import (
+    BookInventorySerializer,
+    BookStockLevelSerializer,
+    StockMovementRequestSerializer,
+    StockMovementSerializer,
+)
 
 __all__ = [
     "WarehouseSerializer",
@@ -25,5 +30,7 @@ __all__ = [
     "VendorSerializer",
     "BookSerializer",
     "BookInventorySerializer",
+    "BookStockLevelSerializer",
     "StockMovementRequestSerializer",
+    "StockMovementSerializer",
 ]

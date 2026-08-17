@@ -243,7 +243,10 @@ class BookEndpointTests(InventoryAPITestCase):
         """L-7: `register/` delegates to `create()` rather than duplicating it."""
         response = self.client.post(
             "/api/v1/inventory/books/register/",
-            {"title": "Chemistry XII", "isbn": "9780000000002", "min_stock": 5},
+            {
+                "title": "Chemistry XII", "isbn": "9780000000002",
+                "min_stock": 5, "mrp": "450.00",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
@@ -252,15 +255,100 @@ class BookEndpointTests(InventoryAPITestCase):
     def test_register_and_create_produce_the_same_shape(self):
         created = self.client.post(
             "/api/v1/inventory/books/",
-            {"title": "A", "isbn": "9780000000003"},
+            {"title": "A", "isbn": "9780000000003", "mrp": "100.00"},
             format="json",
         )
         registered = self.client.post(
             "/api/v1/inventory/books/register/",
-            {"title": "B", "isbn": "9780000000004"},
+            {"title": "B", "isbn": "9780000000004", "mrp": "100.00"},
             format="json",
         )
         self.assertEqual(set(created.data), set(registered.data))
+
+    def test_mrp_is_required_at_the_api_even_though_the_column_is_nullable(self):
+        """
+        `mrp` is nullable in the database on purpose — existing rows may
+        predate pricing — but a *new* book must be priced. Enforced in the
+        serializer rather than defaulting to 0.00, which would silently
+        misprice a book nobody actually priced.
+        """
+        response = self.client.post(
+            "/api/v1/inventory/books/",
+            {"title": "No price", "isbn": "9780000000006"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("mrp", response.data)
+
+    def test_full_catalog_fields_round_trip(self):
+        """The Register New Book screen needs more than the original five."""
+        response = self.client.post(
+            "/api/v1/inventory/books/",
+            {
+                "title": "Physics XI", "isbn": "9780000000007",
+                "author": "R. Author", "publisher": "P. Publisher",
+                "class_level": "Class 11", "board": "CBSE", "subject": "Physics",
+                "mrp": "550.00", "tax_percent": "5.00",
+                "default_warehouse": self.warehouse.pk,
+                "default_section": self.section.pk,
+                "default_rack": self.rack.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["class_level"], "Class 11")
+        self.assertEqual(response.data["default_warehouse_name"], "Main")
+        self.assertEqual(response.data["default_rack_name"], "A-1")
+
+    def test_get_post_and_patch_all_answer_with_the_same_shape(self):
+        """
+        Third time this codebase has been bitten by a read-only field
+        silently vanishing (`05` §5.3): once on `POST /sections/`, and once
+        here — the nullable `default_*` FKs drop their `_name` companions
+        unless the field is a `SerializerMethodField`. `default=None` looks
+        like a fix but is ignored when `partial=True`, so GET and POST stay
+        correct while every PATCH answers with three fewer keys.
+        """
+        created = self.client.post(
+            "/api/v1/inventory/books/",
+            {"title": "Shape", "isbn": "9780000000011", "mrp": "10.00"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        book_id = created.data["id"]
+
+        fetched = self.client.get(f"/api/v1/inventory/books/{book_id}/")
+        patched = self.client.patch(
+            f"/api/v1/inventory/books/{book_id}/", {"title": "Reshaped"}, format="json",
+        )
+
+        self.assertEqual(set(created.data), set(fetched.data))
+        self.assertEqual(set(fetched.data), set(patched.data))
+        for key in ("default_warehouse_name", "default_section_name",
+                    "default_rack_name"):
+            self.assertIn(key, patched.data)
+            self.assertIsNone(patched.data[key])
+
+    def test_search_by_title_or_isbn(self):
+        Book.objects.create(title="Advanced Calculus", isbn="9780000000008", mrp="300.00")
+        response = self.client.get("/api/v1/inventory/books/?search=Calculus")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["isbn"], "9780000000008")
+
+    def test_filter_by_category_fields(self):
+        Book.objects.create(
+            title="Chem XII", isbn="9780000000009",
+            class_level="Class 12", board="CBSE", mrp="400.00",
+        )
+        Book.objects.create(
+            title="Chem XI", isbn="9780000000010",
+            class_level="Class 11", board="CBSE", mrp="400.00",
+        )
+        response = self.client.get("/api/v1/inventory/books/?class_level=Class+12")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["isbn"], "9780000000009")
 
 
 class StockActionTests(InventoryAPITestCase):

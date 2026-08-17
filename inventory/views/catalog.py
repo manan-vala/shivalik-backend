@@ -18,14 +18,19 @@ class BookViewSet(BookStockActionsMixin, viewsets.ModelViewSet):
     CRUD and the catalog schema live here; the ledger reads and stock
     mutations come from `BookStockActionsMixin` in `views/stock.py`:
 
-        * `/books/register/`            explicit registration alias
-        * `/books/inventory/`           joined ledger rows
-        * `/books/{id}/stock-in|out/`   stock mutations
+        * `/books/register/`                       explicit registration alias
+        * `/books/inventory/`                       joined ledger rows (deprecated alias)
+        * `/books/{id}/stock-in|out/`                stock mutations
+        * `/books/{id}/history|in-entries|out-entries/`  the movement log
     """
 
-    queryset = Book.objects.all()
+    queryset = Book.objects.select_related(
+        "default_warehouse", "default_section", "default_rack",
+    ).all()
     serializer_class = BookSerializer
     permission_classes = [IsAuthenticated, IsApprovedStaff]
+    filterset_fields = ["class_level", "board", "subject"]
+    search_fields = ["title", "isbn"]
 
     # -- Section 4.B.2 : POST /books/register/ ----------------------------
     @action(detail=False, methods=["post"], url_path="register")

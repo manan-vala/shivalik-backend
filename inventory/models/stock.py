@@ -15,7 +15,7 @@ of which those balances are a projection.
 
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
-from django.db.models import F
+from django.db.models import F, IntegerField, OuterRef, Subquery, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -97,6 +97,35 @@ def signed_delta(movement_type: str, quantity: int) -> int:
     raise ValueError(f"Unknown movement type: {movement_type!r}")
 
 
+class BookInventoryQuerySet(models.QuerySet):
+    def with_book_totals(self):
+        """
+        Annotate each row with ``book_total_stock`` — ``Sum(curr_stock)``
+        across *every* rack the row's book sits on, not just this row.
+
+        This is what `low-stock` and `needs_reorder` must compare against:
+        a title with ``min_stock = 10`` split 4/4/4 across three racks holds
+        12 and is healthy, even though every individual row looks low on its
+        own (`04-api-surface.md` §4.7).
+
+        A correlated subquery, not a joined ``Sum``, for the same reason
+        `Section.objects.with_rack_totals()` uses one: a join-based aggregate
+        multiplies its rows against any other join a caller adds later, and
+        that bug is invisible until the numbers are quietly wrong.
+        """
+        siblings = (
+            BookInventory.objects
+            .filter(book=OuterRef("book"))
+            .order_by()
+            .values("book")
+            .annotate(total=Sum("curr_stock"))
+            .values("total")
+        )
+        return self.annotate(
+            book_total_stock=Subquery(siblings[:1], output_field=IntegerField()),
+        )
+
+
 class BookInventory(TimeStampedModel):
     """
     Per-(book, rack) stock ledger.
@@ -138,6 +167,8 @@ class BookInventory(TimeStampedModel):
         help_text="When stock last left this rack. Drives dead-stock ageing; "
                   "falls back to created_at for stock that never moved.",
     )
+
+    objects = BookInventoryQuerySet.as_manager()
 
     class Meta:
         ordering = ["book__title", "rack__name"]
