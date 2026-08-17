@@ -6,10 +6,14 @@ paths that had no test at all (finding `M-8`), so this covers the round trips
 an operator actually makes.
 """
 
-from rest_framework import status
-from rest_framework.test import APITestCase
+import threading
 
-from inventory.models import Book, Rack, Section, Vendor, Warehouse
+import pytest
+from django.db import connections
+from rest_framework import status
+from rest_framework.test import APIClient, APITestCase, APITransactionTestCase
+
+from inventory.models import Book, BookInventory, Rack, Section, Vendor, Warehouse
 from staff_auth.models import Employee
 
 
@@ -311,3 +315,66 @@ class StockActionTests(InventoryAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["rack_location"], "Main / A / A-1")
         self.assertEqual(response.data[0]["curr_stock"], 4)
+
+
+@pytest.mark.postgres_only
+class StockOutConcurrencyAPITests(APITransactionTestCase):
+    """
+    `H-1`, closed for real: two concurrent HTTP `stock-out` requests for the
+    same book/rack must not both succeed. `APITestCase` (used above) wraps
+    each test in a transaction that rolls back, so two "concurrent" requests
+    would never actually contend — this needs `APITransactionTestCase`, the
+    DRF equivalent of `TransactionTestCase`.
+    """
+
+    def setUp(self):
+        self.staff = Employee.objects.create_user(
+            email="ops@shivalik.test",
+            password="not-a-default-password",
+            name="Ops",
+            role=Employee.Role.INVENTORY_MANAGER,
+            status=Employee.Status.APPROVED,
+        )
+        self.warehouse = Warehouse.objects.create(name="Main")
+        self.section = Section.objects.create(warehouse=self.warehouse, name="A")
+        # Both counters seeded directly and in agreement — `curr_stock` on
+        # `BookInventory` and `current_stock` on `Rack` must never drift
+        # apart, or `rack.adjust_stock()`'s own bounds check (correctly)
+        # rejects a movement `BookInventory` alone would have allowed.
+        self.rack = Rack.objects.create(
+            section=self.section, name="A-1", max_capacity=100, current_stock=10,
+        )
+        self.vendor = Vendor.objects.create(
+            company_name="Acme Books", vendor_name="Acme", gst_number="24AAACA0000A1Z0",
+        )
+        self.book = Book.objects.create(title="Physics XII", isbn="9780000000005")
+        BookInventory.objects.create(book=self.book, rack=self.rack, curr_stock=10, in_entry=10)
+
+    def _stock_out(self, results, index):
+        # Each thread needs its own client/connection — sharing self.client
+        # across threads would share one HTTP-test connection state too.
+        client = APIClient()
+        client.force_authenticate(user=self.staff)
+        response = client.post(
+            f"/api/v1/inventory/books/{self.book.pk}/stock-out/",
+            {"rack": self.rack.pk, "vendor": self.vendor.pk, "quantity": 6},
+            format="json",
+        )
+        results[index] = response.status_code
+        connections.close_all()
+
+    def test_concurrent_stock_outs_do_not_oversell(self):
+        results = [None, None]
+        threads = [
+            threading.Thread(target=self._stock_out, args=(results, i))
+            for i in range(2)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # 10 units, two attempts to take 6: exactly one 200 and one 400.
+        self.assertEqual(sorted(results), [200, 400])
+        record = BookInventory.objects.get(book=self.book, rack=self.rack)
+        self.assertEqual(record.curr_stock, 4)

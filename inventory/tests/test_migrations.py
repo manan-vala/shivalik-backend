@@ -15,7 +15,12 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 BEFORE = [("inventory", "0002_sprint0_full_schema")]
-AFTER = [("inventory", "0003_move_capacity_to_rack")]
+# HEAD, not just the migration this test is about — `tearDown` uses this to
+# restore the real schema for every test that runs after this one in the same
+# session. Letting it lag behind HEAD (as it did when 0004 landed and this
+# stayed at 0003) silently downgrades the live schema for the rest of the
+# suite instead of "leaving the database at HEAD" as intended.
+AFTER = [("inventory", "0004_warehouse_codes_and_active_flags")]
 
 
 class CapacityMoveMigrationTests(TransactionTestCase):

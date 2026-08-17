@@ -87,16 +87,36 @@ again.
    `conftest.py`; it cannot be fixed with an environment variable there,
    because pytest-django calls `django.setup()` before conftest is imported.
 
+## Decisions taken while implementing the movement engines
+
+The two engines landed after Sprint 0 (Team B Tasks 2–3, Team A Task 2).
+Four choices were made that neither the task files nor the context pack
+specified.
+
+| Decision | Reasoning |
+|---|---|
+| **`Rack.adjust_stock()` takes its own `select_for_update()`** on the rack | The contract only promised the caller's `BookInventory` row was locked. That does not serialise two movements of *different books* onto the same rack, so the capacity check had the same check-then-update race as `H-1`, one level down. Verified by removing the lock and watching the test go red. |
+| **`BookInventory.vendor` is written only by an inbound movement that names a vendor** | Closes the open half of `M-7`. An unattributed receipt no longer erases the supplier on record, and stock-out no longer touches the column at all. The field's `help_text` already described it as "last supplier seen"; the code now matches. |
+| **`stock-out` no longer forwards `vendor` to the engine** | `StockMovement.vendor` is documented "set on incoming stock only". The request body still requires the field and still rejects a blocked vendor at the serializer, so the API contract is unchanged — but an OUT row carrying a vendor was attribution noise. |
+| **The engine validates `movement_type` and normalises `reason=None` → `""`** | Both were live 500s. `signed_delta` raises `ValueError` on an unknown type and `StockMovement.reason` is NOT NULL; the engine is called directly from Python by Team C with no serializer in front of it, so it has to be the layer that returns a 400. See the trap added to `05` §5.3. |
+
 ## Known gaps left open on purpose
 
 * **`H-4`** — the hardcoded `'password123'` default in
   `staff_auth/serializers.py` is untouched. It is Team D's Task 5, and it now
   sits behind an authenticated admin-only route.
-* **`H-1`** — the stock-out race is still there. Fixing it *is* Team B's Task
-  2/3; Sprint 0 only made the fix possible (PostgreSQL, the engine stub).
+* ~~**`H-1`** — the stock-out race~~ **closed.** The racy check and
+  `_apply_movement` are both deleted; both stock routes call
+  `apply_stock_movement()`, which re-checks under its lock.
 * **No `StockMovement` backfill.** `05-implementation-playbook.md` Phase 3
-  requires existing counters to be written back as opening-balance rows.
-  Unassigned in every team file. Team B should own it with Task 2.
+  requires pre-engine counters to be written back as opening-balance rows.
+  Now the single largest gap in the ledger, and the only thing preventing
+  full reconciliation. Team B, Task 7 — with the reconciliation command.
 * **Reviewer direction is contradictory.** `teams/README.md` and
   `TEAM-EXECUTION-PLAN.md` §6 say A→B→C→D→A; all four team files say the
   reverse. Pick one.
+* **`inventory/models/location.py` is Team A's file** by the ownership split,
+  but `Rack.adjust_stock()` was implemented alongside Team B's engine because
+  the engine could not be exercised end to end without it. The signature is
+  unchanged from the published stub, so nothing Team A wrote against it moved
+  — but they should review it rather than reimplement it.

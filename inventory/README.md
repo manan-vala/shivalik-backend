@@ -107,26 +107,38 @@ Base URL: `/api/v1/inventory/`
 
 ## Business rules
 
-* **Stock-in** — always allowed for an unblocked vendor. If no `BookInventory`
-  row exists for `(book, rack)` yet, it is created; otherwise the existing
-  row's counters accumulate.
-* **Stock-out** — pre-flight check rejects the request with `400
-  {"detail": "Insufficient stock on the specified rack."}` if `curr_stock <
-  quantity`.
-* **Blocked vendors** — any stock movement using `vendor.is_blocked = True` is
-  rejected with `400 {"vendor": ["Vendor is blocked."]}`.
-* **Concurrency — not yet guaranteed.** Mutations run inside
-  `transaction.atomic()` with `F()` expressions, so each individual UPDATE is
-  atomic. But the stock-out sufficiency check still runs *outside* the
-  transaction (finding `H-1`), so two concurrent stock-outs can both pass it.
-  Team B's Task 2 moves the check inside the lock; until then, treat the
-  ledger as safe for one writer at a time. `select_for_update()` is also a
-  no-op unless `DB_ENGINE=postgresql` (finding `H-2`) — `manage.py check`
-  warns when it is not.
-* **Timestamps** — nothing currently stamps `Rack.last_change_date` or
-  `last_used`. The old `Section.last_change_date` write was removed with the
-  field (Q3); the replacement belongs in `Rack.adjust_stock()`, which Team A
-  implements and only the movement engine calls.
+* **Every stock change goes through `apply_stock_movement()`** — the single
+  write path in `models/stock.py`. Both routes above call it, and so must
+  Team C's PO-receive. Nothing else may write `BookInventory` or
+  `Rack.current_stock`; a second writer puts the ledger and the movement log
+  permanently out of step.
+* **Stock-in** — always allowed for an unblocked vendor, within the rack's
+  capacity. If no `BookInventory` row exists for `(book, rack)` yet, it is
+  created; otherwise the existing row's counters accumulate.
+* **Stock-out** — rejected with `400 {"detail": "Insufficient stock on the
+  specified rack."}` if `curr_stock < quantity`. The check runs *inside* the
+  row lock, so it cannot go stale between check and write.
+* **Blocked vendors** — rejected with `400 {"vendor": ["Vendor is blocked."]}`.
+  Enforced in the engine as well as the serializer, because the PO-receive
+  path runs no serializer at all.
+* **Concurrency — guaranteed, on PostgreSQL.** `apply_stock_movement()` locks
+  the `BookInventory` row with `select_for_update()` and re-checks
+  sufficiency under that lock (finding `H-1`, closed); `Rack.adjust_stock()`
+  separately locks the rack, because two movements of *different books* onto
+  one rack are not serialised by the first lock. Both are covered by
+  `@pytest.mark.postgres_only` concurrency tests, including the insert race
+  for two concurrent *first* movements of the same `(book, rack)`.
+  `select_for_update()` is a silent no-op unless `DB_ENGINE=postgresql`
+  (finding `H-2`) — `manage.py check` warns when it is not, and those tests
+  skip rather than pass vacuously.
+* **Timestamps** — `Rack.adjust_stock()` stamps `last_change_date`,
+  `last_used` and `updated_by` on every movement (finding `M-1`, closed), and
+  the engine stamps `BookInventory.last_out_at` on outbound movements. Both
+  are single-writer by design.
+* **Vendor attribution** — authoritative on `StockMovement` and
+  `PurchaseOrder`. `BookInventory.vendor` is a convenience "last supplier
+  seen": written only by an inbound movement that names one, never cleared by
+  an unattributed receipt, never touched on stock-out (finding `M-7`).
 * **Deficit / reorder flag** — computed server-side per row (see the response
   shape above); the frontend just renders it.
 
@@ -179,20 +191,22 @@ Sprint 0 landed the whole schema in one migration so four teams would not
 generate conflicting ones. Several models therefore exist with no endpoints
 behind them yet — that is deliberate, not an oversight:
 
-* `StockMovement` — the model, constraints and indexes exist; the engine
-  (`apply_stock_movement`) is a stub. **Team B, Task 2.**
-* `Rack.adjust_stock()` — signature published, body raises
-  `NotImplementedError`. **Team A, Task 2.** Until it lands, any caller of the
-  movement engine will fail loudly rather than silently skip the rack.
+* ~~`StockMovement` engine~~ and ~~`Rack.adjust_stock()`~~ — **both landed.**
+  Every movement now writes a `StockMovement` row (with `balance_after`) and
+  stamps the rack. `models/stock.py` and `models/location.py` carry the
+  details.
 * `PurchaseOrder` / `PurchaseOrderLine` — no serializers or routes yet.
-  **Team C, Tasks 4–6.**
+  **Team C, Tasks 4–6.** The engine they depend on is live, so
+  `receive/` no longer needs an `xfail`.
 * The new `Book` and `Vendor` fields are in the database but not in their
   serializers; `books/` and `vendors/` still expose the original five each.
 * `staff_auth.permissions` classes are permissive stubs. **Team D, Task 2.**
-* No backfill of `StockMovement` from existing `BookInventory` counters has
-  run, so `books/{id}/history/` will not reconcile against `curr_stock` for
-  pre-existing rows until Team B writes one.
+* **No backfill of `StockMovement` from pre-engine `BookInventory` counters
+  has run**, so `books/{id}/history/` will not reconcile against `curr_stock`
+  for rows that predate the engine. **Team B, Task 7** — along with the
+  reconciliation command that would catch a `Rack.current_stock` drifted from
+  `Sum(BookInventory.curr_stock)`.
 
-Still unbuilt and unowned by Sprint 0: vendor block/unblock, rack info and
-empty-rack reads, low-stock / in-stock / low-selling reads, dead stock, and
-self-signup.
+Still unbuilt: vendor block/unblock, rack info and empty-rack reads, the
+top-level `stock/` resource (low-stock / in-stock / low-selling / history /
+in-entries / out-entries, per Q14), dead stock, and self-signup.

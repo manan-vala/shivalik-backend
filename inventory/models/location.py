@@ -18,8 +18,10 @@ every one of them. The partial constraints below exempt ``""`` instead.
 
 from django.conf import settings
 from django.db import models
-from django.db.models import IntegerField, OuterRef, Subquery, Sum
+from django.db.models import F, IntegerField, OuterRef, Subquery, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from .base import TimeStampedModel
 
@@ -189,29 +191,47 @@ class Rack(TimeStampedModel):
         """
         Change this rack's stock by ``delta``.
 
-        STUB — written by Team B so the movement engine could be written
-        against a real name on day 1. **Team A replaces this body** (their
-        Task 2); the signature is already called from `apply_stock_movement`,
-        so it must not change without telling Team B first.
-
-        The contract Team A must satisfy:
-
-        * ``delta`` is signed — positive for inbound, negative for outbound.
-        * Refuse to drop below zero, or above ``max_capacity``, by raising
-          ``rest_framework.exceptions.ValidationError``. Django's
-          ``django.core.exceptions.ValidationError`` surfaces as a 500 through
-          DRF, so it is the wrong one here.
-        * Update ``current_stock`` with an ``F()`` expression — never a
-          read-modify-write in Python.
-        * Stamp ``last_change_date`` and ``last_used`` to now, and
-          ``updated_by`` to ``actor`` (which may be ``None``).
-        * Persist the change itself. Callers do not save the rack afterwards.
-        * Return ``None``. The caller re-reads if it needs the new value.
-
-        It is always called inside the engine's transaction, with the
-        ``BookInventory`` row already locked, so it must not open its own.
-        `max_capacity == 0` means "unmeasured" and skips the ceiling check —
-        the `rack_stock_within_capacity` constraint above encodes the same
+        ``delta`` is signed — positive for inbound, negative for outbound.
+        Refuses to drop below zero or above ``max_capacity`` by raising DRF's
+        ``ValidationError`` — Django's own ``ValidationError`` would surface
+        as a 500 through DRF instead of a clean 400. ``max_capacity == 0``
+        means "unmeasured" and skips the ceiling check; the
+        ``rack_stock_within_capacity`` constraint above encodes the same
         exemption, so the two must stay in agreement.
+
+        Re-selects and locks *this* rack with ``select_for_update()`` before
+        checking those bounds. The caller (``apply_stock_movement``) has
+        already locked the ``BookInventory`` row, but two movements against
+        the same rack can come from two different books, so that lock does
+        not serialise them — this is the same check-then-update race as
+        ``H-1``, one level down, for the same reason: without it, two
+        concurrent movements could each read a ``current_stock`` that is
+        individually within bounds, then both write, landing the real total
+        outside them. Locking here is safe — never opens a transaction of its
+        own — because the caller is always already inside one.
+
+        Stamps ``last_change_date`` and ``last_used`` to now, and
+        ``updated_by`` to ``actor`` (which may be ``None``). Updates
+        ``current_stock`` with an ``F()`` expression, never a
+        read-modify-write in Python. Persists the change itself and returns
+        ``None`` — the caller re-reads the rack if it needs the new value.
         """
-        raise NotImplementedError("Team A to implement — see docstring contract.")
+        rack = Rack.objects.select_for_update().get(pk=self.pk)
+        new_stock = rack.current_stock + delta
+
+        if new_stock < 0:
+            raise ValidationError({
+                "rack": "This movement would drop the rack below zero stock.",
+            })
+        if rack.max_capacity and new_stock > rack.max_capacity:
+            raise ValidationError({
+                "rack": "This movement would exceed the rack's capacity.",
+            })
+
+        now = timezone.now()
+        Rack.objects.filter(pk=self.pk).update(
+            current_stock=F("current_stock") + delta,
+            last_change_date=now,
+            last_used=now,
+            updated_by=actor,
+        )
