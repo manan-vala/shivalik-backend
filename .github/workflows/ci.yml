@@ -50,6 +50,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      # Everything below is ordered cheapest-first, so a broken PR fails in
+      # seconds rather than after the whole suite.
+
       - name: Django system checks
         run: python manage.py check --fail-level WARNING
 
@@ -59,5 +62,13 @@ jobs:
       - name: Migrations apply cleanly
         run: python manage.py migrate --noinput
 
-      - name: Tests
+      # The gate: six checks covering the invariants every team depends on —
+      # the API is closed, stock moves only through the engine, overselling
+      # is a 400, the ledger reconciles, the core routes answer, and the
+      # OpenAPI contract still generates. ~3s. If this is red, nothing else
+      # is worth reading. See inventory/tests/test_smoke.py.
+      - name: Smoke tests
+        run: pytest -m smoke
+
+      - name: Full test suite
         run: pytest

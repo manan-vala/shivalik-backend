@@ -5,6 +5,15 @@
 #   docker compose down -v       # stop and wipe the volume
 #
 # Credentials match the defaults in .env.example.
+#
+# Already running something else on 5432 — another project's container, or a
+# Postgres you installed directly? Publish this one somewhere else instead of
+# fighting over the port, and point the app at it:
+#
+#   DB_PORT_HOST=5433 docker compose up -d db
+#   # then set DB_PORT=5433 in your .env
+#
+# The default is unchanged, so this is invisible unless you need it.
 
 services:
   db:
@@ -15,7 +24,7 @@ services:
       POSTGRES_USER: shivalik
       POSTGRES_PASSWORD: shivalik
     ports:
-      - "5432:5432"
+      - "${DB_PORT_HOST:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

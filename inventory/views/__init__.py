@@ -14,7 +14,7 @@ accidental public endpoint visible in review.
 from .location import RackViewSet, SectionViewSet, WarehouseViewSet
 from .vendor import VendorViewSet
 from .catalog import BookViewSet
-from .stock import BookStockActionsMixin
+from .stock import BookStockActionsMixin, StockViewSet
 
 __all__ = [
     "WarehouseViewSet",
@@ -23,4 +23,5 @@ __all__ = [
     "VendorViewSet",
     "BookViewSet",
     "BookStockActionsMixin",
+    "StockViewSet",
 ]

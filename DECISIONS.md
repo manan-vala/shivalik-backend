@@ -87,16 +87,71 @@ again.
    `conftest.py`; it cannot be fixed with an environment variable there,
    because pytest-django calls `django.setup()` before conftest is imported.
 
+## Decisions taken while implementing the movement engines
+
+The two engines landed after Sprint 0 (Team B Tasks 2–3, Team A Task 2).
+Four choices were made that neither the task files nor the context pack
+specified.
+
+| Decision | Reasoning |
+|---|---|
+| **`Rack.adjust_stock()` takes its own `select_for_update()`** on the rack | The contract only promised the caller's `BookInventory` row was locked. That does not serialise two movements of *different books* onto the same rack, so the capacity check had the same check-then-update race as `H-1`, one level down. Verified by removing the lock and watching the test go red. |
+| **`BookInventory.vendor` is written only by an inbound movement that names a vendor** | Closes the open half of `M-7`. An unattributed receipt no longer erases the supplier on record, and stock-out no longer touches the column at all. The field's `help_text` already described it as "last supplier seen"; the code now matches. |
+| **`stock-out` no longer forwards `vendor` to the engine** | `StockMovement.vendor` is documented "set on incoming stock only". The request body still requires the field and still rejects a blocked vendor at the serializer, so the API contract is unchanged — but an OUT row carrying a vendor was attribution noise. |
+| **The engine validates `movement_type` and normalises `reason=None` → `""`** | Both were live 500s. `signed_delta` raises `ValueError` on an unknown type and `StockMovement.reason` is NOT NULL; the engine is called directly from Python by Team C with no serializer in front of it, so it has to be the layer that returns a 400. See the trap added to `05` §5.3. |
+
+## Decisions taken finishing Team B's module (Tasks 5–7)
+
+| Decision | Reasoning |
+|---|---|
+| **`mrp` is `required=True` via `extra_kwargs`, not a manual field override** | Keeps DRF's automatic propagation of the model field's own validators (`MinValueValidator`), which a hand-written `serializers.DecimalField()` would have dropped silently. |
+| **`BookInventoryQuerySet.with_book_totals()` — a correlated subquery, not `annotate(Sum("inventory_records__curr_stock"))`** | The same reasoning as `Section.objects.with_rack_totals()`: a joined `Sum` multiplies against any other join a future caller adds, and the bug is invisible until the numbers are quietly wrong. Fixes the low-stock/`needs_reorder` per-row bug the task file called out. |
+| **`backfill_stock_ledger` and `reconcile_stock_ledger` are management commands, not a data migration** | Re-runnable, `call_command`-testable, and a bug found later is a code fix rather than a second migration correcting the first. Matches the existing `seed_inventory` convention. |
+| **Backfill targets "zero movement history for this `(book, rack)`", not "no row with our specific reason string"** | The narrower definition would re-backfill on top of a `(book, rack)` that already has one real movement but predates a hypothetical future reason-string change. "Zero movements at all" is both the semantically correct definition of "unexplained stock" and what makes the command idempotent for free. |
+| **Reconciliation reports only; it does not auto-fix** | Auto-correcting a stock number outside `apply_stock_movement()` is exactly the second-writer problem this whole design exists to prevent. A real discrepancy gets a human-reviewed compensating `ADJUSTMENT` movement. |
+| **Every derived/annotated field on `BookSerializer` and `BookStockLevelSerializer` is a `SerializerMethodField`** | Not `CharField(source=…)` or `IntegerField(read_only=True)`. See the two bugs below — this is the third and fourth time the same DRF behaviour has cost this codebase a wrong response shape. |
+
+## Bugs found reviewing Tasks 5–7, and what they cost to miss
+
+Both are the *same* DRF behaviour as recorded bug #2 above (`POST /sections/`
+silently dropping two fields), which is why the playbook's §5.3 entry has
+been rewritten from "give it a fallback" to "use a `SerializerMethodField`".
+
+1. **`BookStockLevelSerializer` 500'd on any `Book` without the queryset
+   annotation.** `curr_stock` was `IntegerField(read_only=True)` reading
+   `_books_with_stock_totals()`'s annotation. On a bare `Book` the attribute
+   is missing, so DRF *omitted* the key — and `get_deficit`, which computes
+   from it, raised `AttributeError` → 500. Both current callers annotate, so
+   it was latent; `reorder/` is documented as consuming this exact number and
+   would have hit it. Fixed with a method field plus an aggregate fallback,
+   matching `SectionSerializer`.
+2. **`PATCH /books/{id}/` silently returned three fewer fields than GET and
+   POST.** `default_warehouse_name` / `default_section_name` /
+   `default_rack_name` were `CharField(source="<fk>.name", default=None)`.
+   The `default=None` was added specifically to survive a null FK — and it
+   does, on GET and POST. But `Field.get_default()` begins
+   `if self.default is empty or getattr(self.root, 'partial', False): raise
+   SkipField()`, so on a **partial update the default is skipped entirely**
+   and all three keys vanish. Nothing raised; the endpoint just answered with
+   two different shapes depending on the verb. A test now asserts
+   GET/POST/PATCH produce identical key sets.
+
 ## Known gaps left open on purpose
 
 * **`H-4`** — the hardcoded `'password123'` default in
   `staff_auth/serializers.py` is untouched. It is Team D's Task 5, and it now
   sits behind an authenticated admin-only route.
-* **`H-1`** — the stock-out race is still there. Fixing it *is* Team B's Task
-  2/3; Sprint 0 only made the fix possible (PostgreSQL, the engine stub).
-* **No `StockMovement` backfill.** `05-implementation-playbook.md` Phase 3
-  requires existing counters to be written back as opening-balance rows.
-  Unassigned in every team file. Team B should own it with Task 2.
+* ~~**`H-1`** — the stock-out race~~ **closed.** The racy check and
+  `_apply_movement` are both deleted; both stock routes call
+  `apply_stock_movement()`, which re-checks under its lock.
+* ~~**No `StockMovement` backfill.**~~ **Closed.** `backfill_stock_ledger` +
+  `reconcile_stock_ledger` (Team B, Task 7) — the ledger now reconciles for
+  pre-existing stock too. Team B's module is complete.
 * **Reviewer direction is contradictory.** `teams/README.md` and
   `TEAM-EXECUTION-PLAN.md` §6 say A→B→C→D→A; all four team files say the
   reverse. Pick one.
+* **`inventory/models/location.py` is Team A's file** by the ownership split,
+  but `Rack.adjust_stock()` was implemented alongside Team B's engine because
+  the engine could not be exercised end to end without it. The signature is
+  unchanged from the published stub, so nothing Team A wrote against it moved
+  — but they should review it rather than reimplement it.

@@ -62,9 +62,11 @@ class SerializerAndViewImportSurfaceTests(SimpleTestCase):
         from inventory.serializers import (  # noqa: F401
             BookInventorySerializer,
             BookSerializer,
+            BookStockLevelSerializer,
             RackSerializer,
             SectionSerializer,
             StockMovementRequestSerializer,
+            StockMovementSerializer,
             VendorSerializer,
             WarehouseSerializer,
         )
@@ -74,17 +76,29 @@ class SerializerAndViewImportSurfaceTests(SimpleTestCase):
             BookViewSet,
             RackViewSet,
             SectionViewSet,
+            StockViewSet,
             VendorViewSet,
             WarehouseViewSet,
         )
 
-    def test_request_serializer_was_renamed(self):
+    def test_movement_serializers_are_two_distinct_classes(self):
         """
-        `StockMovementSerializer` was a request-body validator sharing a name
-        with the model it is not attached to. The rename is what stops someone
-        wiring the wrong one into the movement log.
+        `StockMovementRequestSerializer` (validates a stock-in/out request
+        body) and `StockMovementSerializer` (reads the ledger, added for
+        Task 6) share a domain but must never collapse into one class — the
+        two used to share a single name, which was the original trap this
+        split fixed, and reusing the name for the read side would reopen it.
         """
-        import inventory.serializers as serializers
+        from inventory import serializers
+        from inventory.models import StockMovement
 
-        self.assertFalse(hasattr(serializers, "StockMovementSerializer"))
+        self.assertTrue(hasattr(serializers, "StockMovementSerializer"))
         self.assertTrue(hasattr(serializers, "StockMovementRequestSerializer"))
+        self.assertIsNot(
+            serializers.StockMovementSerializer,
+            serializers.StockMovementRequestSerializer,
+        )
+        # The request validator is a plain Serializer, not bound to a model —
+        # only the ledger's own read serializer is.
+        self.assertFalse(hasattr(serializers.StockMovementRequestSerializer, "Meta"))
+        self.assertIs(serializers.StockMovementSerializer.Meta.model, StockMovement)

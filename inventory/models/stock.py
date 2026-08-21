@@ -14,7 +14,10 @@ of which those balances are a projection.
 """
 
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
+from django.db.models import F, IntegerField, OuterRef, Subquery, Sum
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from .base import TimeStampedModel
 
@@ -94,6 +97,35 @@ def signed_delta(movement_type: str, quantity: int) -> int:
     raise ValueError(f"Unknown movement type: {movement_type!r}")
 
 
+class BookInventoryQuerySet(models.QuerySet):
+    def with_book_totals(self):
+        """
+        Annotate each row with ``book_total_stock`` — ``Sum(curr_stock)``
+        across *every* rack the row's book sits on, not just this row.
+
+        This is what `low-stock` and `needs_reorder` must compare against:
+        a title with ``min_stock = 10`` split 4/4/4 across three racks holds
+        12 and is healthy, even though every individual row looks low on its
+        own (`04-api-surface.md` §4.7).
+
+        A correlated subquery, not a joined ``Sum``, for the same reason
+        `Section.objects.with_rack_totals()` uses one: a join-based aggregate
+        multiplies its rows against any other join a caller adds later, and
+        that bug is invisible until the numbers are quietly wrong.
+        """
+        siblings = (
+            BookInventory.objects
+            .filter(book=OuterRef("book"))
+            .order_by()
+            .values("book")
+            .annotate(total=Sum("curr_stock"))
+            .values("total")
+        )
+        return self.annotate(
+            book_total_stock=Subquery(siblings[:1], output_field=IntegerField()),
+        )
+
+
 class BookInventory(TimeStampedModel):
     """
     Per-(book, rack) stock ledger.
@@ -135,6 +167,8 @@ class BookInventory(TimeStampedModel):
         help_text="When stock last left this rack. Drives dead-stock ageing; "
                   "falls back to created_at for stock that never moved.",
     )
+
+    objects = BookInventoryQuerySet.as_manager()
 
     class Meta:
         ordering = ["book__title", "rack__name"]
@@ -260,53 +294,122 @@ class StockMovement(TimeStampedModel):
 # ---------------------------------------------------------------------------
 
 
+def _lock_or_create_inventory_row(*, book, rack, vendor):
+    """
+    Return the `BookInventory` row for `(book, rack)`, locked with
+    `select_for_update()`.
+
+    `select_for_update()` cannot lock a row that does not exist yet, so two
+    concurrent *first* movements for the same `(book, rack)` can both miss the
+    lookup below and both try to insert — `uniq_book_per_rack` then turns the
+    loser's insert into an `IntegrityError` instead of a lock wait.
+    `get_or_create` alone does not fix this; it has the same race inside it.
+    The nested `atomic()` block turns the loser's failure into a savepoint
+    rollback rather than poisoning the caller's transaction, so re-selecting
+    afterwards picks up the winner's row — by then it exists, and the lock
+    acquires normally instead of racing again.
+    """
+    try:
+        return BookInventory.objects.select_for_update().get(book=book, rack=rack)
+    except BookInventory.DoesNotExist:
+        pass
+
+    try:
+        with transaction.atomic():
+            return BookInventory.objects.create(book=book, rack=rack, vendor=vendor)
+    except IntegrityError:
+        return BookInventory.objects.select_for_update().get(book=book, rack=rack)
+
+
+@transaction.atomic
 def apply_stock_movement(*, book, rack, quantity, movement_type, actor,
                          vendor=None, purchase_order=None, reason=""):
     """
     The single path for ALL stock changes. Runs in one atomic transaction.
 
-    STUB — published on day 1 so Teams A and C can write real calls against a
-    real signature. Team B fills in the body (their Task 2); no caller changes
-    when they do.
+    Updates BookInventory (curr_stock, in_entry/out_entry), calls
+    rack.adjust_stock(), and writes one StockMovement row.
 
-    The contract callers may rely on:
+    Returns the refreshed `BookInventory` row — `curr_stock` is a plain
+    integer, not an unresolved `F()` expression, so callers and their
+    response shapes do not need to know an `F()` update ran underneath.
 
-    * Returns the updated `BookInventory` row, re-read after the update, so
-      `curr_stock` is an integer and not an unresolved `F()` expression.
-    * Raises `InsufficientStockError` when an outbound movement exceeds stock,
-      and `rest_framework.exceptions.ValidationError` for anything the request
-      itself got wrong (blocked vendor, missing reason, rack overflow).
-    * Either everything lands or nothing does: the balance update, the
-      `rack.adjust_stock()` call and the `StockMovement` row share one
-      transaction.
-    * `quantity` is always positive; direction comes from `movement_type`
-      (see `signed_delta`).
+    Raises `InsufficientStockError` when an outbound movement exceeds the
+    stock actually on the rack, and DRF's `ValidationError` for anything else
+    the request got wrong: an unknown movement type, a blocked vendor, a
+    missing reason on an adjustment or write-off, or a non-positive quantity.
+    The sufficiency check runs *inside* the row lock acquired below —
+    check-then-update in one critical section is the whole fix for `H-1`;
+    checking before the transaction, as the old view code did, is the bug
+    this replaces.
 
-    The body, when written, must — all inside `@transaction.atomic`:
-
-    1. Lock the `BookInventory` row with `select_for_update()`. This is why Q2
-       had to be PostgreSQL: the lock is a silent no-op on SQLite.
-    2. Check sufficiency *inside* that lock. Check-then-update in one critical
-       section is the whole fix for `H-1`; checking before the transaction is
-       the bug.
-    3. Update `curr_stock` and `in_entry`/`out_entry` with `F()` expressions,
-       and stamp `last_out_at` on outbound movements.
-    4. Call `rack.adjust_stock(delta, actor)`.
-    5. Write exactly one `StockMovement` row, including `balance_after`.
-    6. Enforce the invariants that cannot live in a serializer, because this
-       function is also called directly from Python: blocked vendors, and
-       `reason` being mandatory for `REASON_REQUIRED_TYPES`.
-
-    Two traps worth writing a test for before writing the code:
-
-    * `select_for_update()` cannot lock a row that does not exist yet. Two
-      concurrent first-ever movements for the same (book, rack) both miss,
-      both insert, and `uniq_book_per_rack` turns one into a 500. Catch
-      `IntegrityError` and re-select.
-    * `curr_stock` is a `PositiveIntegerField`, so underflow raises
-      `IntegrityError`, not a validation error. The guard in step 2 is what
-      keeps that a clean 400.
+    Enforced here rather than in a serializer, because Team C's purchase-order
+    receive calls this function directly with no serializer in front of it.
+    Every guard below therefore has to turn a caller's mistake into a 400 —
+    the database constraints behind them raise `IntegrityError`, which DRF
+    reports as a 500 (playbook §5.3).
     """
-    raise NotImplementedError(
-        "Team B, Task 2 — pair on this one, then get a whole-team review."
+    if quantity < 1:
+        raise ValidationError({"quantity": "Quantity must be at least 1."})
+
+    # `signed_delta` raises ValueError on an unknown type — correct for a
+    # pure function, but a 500 through DRF. Translated here, at the boundary
+    # three teams call, rather than changing `signed_delta`'s own contract.
+    if movement_type not in INBOUND_TYPES | OUTBOUND_TYPES:
+        raise ValidationError({
+            "movement_type": f"Unknown movement type: {movement_type!r}.",
+        })
+
+    # `StockMovement.reason` is NOT NULL with a "" default; a caller passing
+    # None (e.g. forwarding a nullable note field) would otherwise reach the
+    # database and 500.
+    reason = reason or ""
+
+    if movement_type in REASON_REQUIRED_TYPES and not reason:
+        raise ValidationError({
+            "reason": "A reason is required for adjustments and write-offs.",
+        })
+
+    if vendor is not None and vendor.is_blocked:
+        raise ValidationError({"vendor": "Vendor is blocked."})
+
+    delta = signed_delta(movement_type, quantity)
+    is_inbound = delta > 0
+
+    record = _lock_or_create_inventory_row(
+        book=book, rack=rack, vendor=vendor if is_inbound else None,
     )
+
+    if not is_inbound and record.curr_stock < quantity:
+        raise InsufficientStockError(available=record.curr_stock, requested=quantity)
+
+    update_fields = {"curr_stock": F("curr_stock") + delta}
+    if is_inbound:
+        update_fields["in_entry"] = F("in_entry") + quantity
+        # "Last supplier seen" (see the field's help_text) — only overwritten
+        # when this movement actually names one, so an unattributed receipt
+        # does not erase a vendor already on record.
+        if vendor is not None:
+            update_fields["vendor"] = vendor
+    else:
+        update_fields["out_entry"] = F("out_entry") + quantity
+        update_fields["last_out_at"] = timezone.now()
+
+    BookInventory.objects.filter(pk=record.pk).update(**update_fields)
+    record.refresh_from_db()
+
+    rack.adjust_stock(delta, actor)
+
+    StockMovement.objects.create(
+        book=book,
+        rack=rack,
+        vendor=vendor,
+        purchase_order=purchase_order,
+        movement_type=movement_type,
+        quantity=quantity,
+        balance_after=record.curr_stock,
+        actor=actor,
+        reason=reason,
+    )
+
+    return record

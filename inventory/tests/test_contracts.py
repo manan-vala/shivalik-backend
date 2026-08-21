@@ -8,8 +8,12 @@ shape itself is the thing under test:
 * `Rack.adjust_stock(delta, actor)` — Team B wrote it, Team A fills it in.
 * `apply_stock_movement(...)` — Team B publishes and fills it in.
 
-When a body lands, the `NotImplementedError` assertions here fail. That is the
-signal to replace them with real behaviour tests, not to delete them.
+When a body lands, the `NotImplementedError` assertion here fails. That is the
+signal to replace it with real behaviour tests — in a DB-enabled test module,
+since this one is deliberately a `SimpleTestCase` with no database. Both
+bodies have now landed: `apply_stock_movement`'s behaviour tests live in
+`test_stock_engine.py`, `Rack.adjust_stock`'s live in `test_rack_engine.py`,
+and this file keeps only the two signature contracts.
 """
 
 import inspect
@@ -39,28 +43,8 @@ class RackAdjustStockContractTests(TestCase):
         signature = inspect.signature(Rack.adjust_stock)
         self.assertEqual(list(signature.parameters), ["self", "delta", "actor"])
 
-    def test_adjust_stock_updates_and_stamps_the_rack(self):
-        warehouse = Warehouse.objects.create(name="Main")
-        section = Section.objects.create(warehouse=warehouse, name="A")
-        rack = Rack.objects.create(section=section, name="R1", max_capacity=5)
-
-        result = rack.adjust_stock(3, None)
-
-        self.assertIsNone(result)
-        rack.refresh_from_db()
-        self.assertEqual(rack.current_stock, 3)
-        self.assertIsNotNone(rack.last_change_date)
-        self.assertIsNotNone(rack.last_used)
-
-    def test_adjust_stock_rejects_underflow_and_overflow(self):
-        warehouse = Warehouse.objects.create(name="Main")
-        section = Section.objects.create(warehouse=warehouse, name="A")
-        rack = Rack.objects.create(section=section, name="R1", max_capacity=5)
-
-        with self.assertRaises(ValidationError):
-            rack.adjust_stock(-1, None)
-        with self.assertRaises(ValidationError):
-            rack.adjust_stock(6, None)
+    # `test_stub_fails_loudly` lived here until Task 2 landed a real body —
+    # see `test_rack_engine.py` for its behaviour tests.
 
 
 class ApplyStockMovementContractTests(SimpleTestCase):
@@ -96,12 +80,10 @@ class ApplyStockMovementContractTests(SimpleTestCase):
         }
         self.assertEqual(defaults, {"vendor": None, "purchase_order": None, "reason": ""})
 
-    def test_stub_fails_loudly(self):
-        with self.assertRaises(NotImplementedError):
-            apply_stock_movement(
-                book=None, rack=None, quantity=1, movement_type=MovementType.IN,
-                actor=None,
-            )
+    # `test_stub_fails_loudly` lived here until Team B's Task 2 landed a real
+    # body — this class stays a `SimpleTestCase` (signature-only, no DB), and
+    # a real body needs a database, so its behaviour tests moved to
+    # `test_stock_engine.py` rather than turning this class into one.
 
 
 class MovementTypeTests(SimpleTestCase):
