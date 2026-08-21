@@ -1,4 +1,4 @@
-# Backend — Shivalik
+# Backend - Shivalik
 
 Django + DRF backend for the Shivalik book-distribution warehouse: catalog,
 stock ledger, storage hierarchy, vendors and purchase orders, staff auth.
