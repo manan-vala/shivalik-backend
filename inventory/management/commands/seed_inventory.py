@@ -46,6 +46,12 @@ class Command(BaseCommand):
         sec2, _ = Section.objects.get_or_create(
             warehouse=wh1, name="Engineering Texts"
         )
+        sec3, _ = Section.objects.get_or_create(
+            warehouse=wh1, name="Arts & Humanities"
+        )
+        sec4, _ = Section.objects.get_or_create(
+            warehouse=wh1, name="Reference & General"
+        )
 
         # 3. Racks — capacity lives here.
         now = timezone.now()
@@ -63,6 +69,31 @@ class Command(BaseCommand):
             section=sec2,
             name="CS-101",
             defaults={"max_capacity": 3000, "last_used": now},
+        )
+        Rack.objects.get_or_create(
+            section=sec3,
+            name="AH-101",
+            defaults={"max_capacity": 2000, "last_used": now},
+        )
+        Rack.objects.get_or_create(
+            section=sec2,
+            name="CS-102",
+            defaults={"max_capacity": 3000, "last_used": now},
+        )
+        Rack.objects.get_or_create(
+            section=sec4,
+            name="REF-101",
+            defaults={"max_capacity": 2000, "last_used": now},
+        )
+        Rack.objects.get_or_create(
+            section=sec3,
+            name="AH-102",
+            defaults={"max_capacity": 2000, "last_used": now},
+        )
+        Rack.objects.get_or_create(
+            section=sec4,
+            name="REF-102",
+            defaults={"max_capacity": 2000, "last_used": now},
         )
 
         # 4. Vendors — `categories_supplied` is a JSON list, not a CSV string.
