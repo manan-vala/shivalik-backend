@@ -41,6 +41,9 @@ pip install -r requirements.txt
 
 Create a `.env` file using `.env.example` and configure the required environment variables.
 
+PostgreSQL is required. Set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+`POSTGRES_HOST`, and `POSTGRES_PORT` in `.env` before running migrations.
+
 ### 6. Apply migrations
 
 ```bash

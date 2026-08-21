@@ -21,8 +21,8 @@ Every model inherits `TimeStampedModel` (adds `created_at`, `updated_at`).
 | Model | Notable fields | Notes |
 |---|---|---|
 | `Warehouse` | `name` (unique) | |
-| `Section` | `warehouse`, `name`, `max_capacity`, `current_stock`, `last_change_date`, `updated_by` | Unique per `(warehouse, name)`. `updated_by → settings.AUTH_USER_MODEL`. |
-| `Rack` | `section`, `name`, `last_used` | Unique per `(section, name)`. |
+| `Section` | `warehouse`, `name` | Capacity and stock totals are calculated from racks. Unique per `(warehouse, name)`. |
+| `Rack` | `section`, `name`, `max_capacity`, `current_stock`, `last_change_date`, `last_used`, `updated_by` | Unique per `(section, name)`. `max_capacity = 0` means unmeasured capacity. |
 | `Vendor` | `company_name`, `vendor_name`, `gst_number` (unique), `is_blocked` | Blocked vendors are rejected by stock actions. |
 | `Book` | `title`, `isbn` (unique), `min_stock`, `low_selling` | `low_selling` is written by a future analytics job, not by the API. |
 | `BookInventory` | `book`, `rack`, `vendor`, `in_entry`, `out_entry`, `curr_stock` | **Unique per `(book, rack)`** — one canonical ledger row per shelf location. Counters are updated only through the view actions below. |
@@ -43,9 +43,9 @@ Base URL: `/api/v1/inventory/`
 |---|---|---|
 | GET / POST | `warehouses/` | `{name}` |
 | GET / PUT / PATCH / DELETE | `warehouses/{id}/` | |
-| GET / POST | `sections/` | `{warehouse, name, max_capacity}` |
+| GET / POST | `sections/` | `{warehouse, name}` |
 | GET / PUT / PATCH / DELETE | `sections/{id}/` | |
-| GET / POST | `racks/` | `{section, name}` |
+| GET / POST | `racks/` | `{section, name, max_capacity}` |
 | GET / PUT / PATCH / DELETE | `racks/{id}/` | |
 | GET / POST | `vendors/` | `{company_name, vendor_name, gst_number, is_blocked}` |
 | GET / PUT / PATCH / DELETE | `vendors/{id}/` | |
@@ -57,7 +57,6 @@ Base URL: `/api/v1/inventory/`
 | GET | `books/` | Book catalog (no stock info). |
 | POST | `books/` | Create a book. |
 | POST | `books/register/` | Explicit registration alias — same payload as POST `books/`. |
-| GET / PUT / PATCH / DELETE | `books/{id}/` | Retrieve / edit / delete a book. |
 | GET | `books/inventory/` | Rich rows joined across `Book / Rack / Section / Warehouse / Vendor`, including `deficit`, `needs_reorder`, `rack_location`. Consumed by the frontend inventory table. |
 | POST | `books/{id}/stock-in/` | Body: `{"rack": id, "vendor": id, "quantity": >=1}` — increases `in_entry` and `curr_stock`. |
 | POST | `books/{id}/stock-out/` | Same body — increases `out_entry`, decreases `curr_stock`. Returns **400** if `curr_stock < quantity`. |
@@ -77,7 +76,6 @@ Base URL: `/api/v1/inventory/`
     "vendor_name": "Acme",
     "in_entry": 25,
     "out_entry": 3,
-    "curr_stock": 22,
     "deficit": 0,          // max(min_stock - curr_stock, 0)
     "needs_reorder": false  // curr_stock < book.min_stock
   }
@@ -91,16 +89,15 @@ Base URL: `/api/v1/inventory/`
 * **Stock-in** — always allowed for an unblocked vendor. If no `BookInventory`
   row exists for `(book, rack)` yet, it is created; otherwise the existing
   row's counters accumulate.
-* **Stock-out** — pre-flight check rejects the request with `400
-  {"detail": "Insufficient stock on the specified rack."}` if `curr_stock <
-  quantity`.
+* **Stock-out** — rejects the request with `400` if the rack does not have
+  enough stock.
 * **Blocked vendors** — any stock movement using `vendor.is_blocked = True` is
   rejected with `400 {"vendor": ["Vendor is blocked."]}`.
 * **Concurrency** — mutations run inside `transaction.atomic()` using
   `select_for_update()` + `F()` expressions, so simultaneous writes from two
   staff members can't stomp each other's counters.
-* **Section snapshot** — every mutation rolls the parent
-  `Section.last_change_date` forward via `timezone.now()`.
+* **Rack state** — every mutation updates rack stock and timestamps through
+  `Rack.adjust_stock()`; section totals are calculated from their racks.
 * **Deficit / reorder flag** — computed server-side per row (see the response
   shape above); the frontend just renders it.
 
@@ -108,7 +105,6 @@ Base URL: `/api/v1/inventory/`
 
 ## Local setup & testing
 
-Backend uses conda env `main` (see project convention).
 
 ```bat
 :: from backend-shivalik\
@@ -120,9 +116,8 @@ python manage.py runserver
 ```
 
 Authentication is JWT (`rest_framework_simplejwt`). Get a token from
-`/api/v1/auth/…` and pass `Authorization: Bearer <token>`. Note: no
-`DEFAULT_PERMISSION_CLASSES` is set project-wide, so endpoints currently
-default to `AllowAny` — tighten this in a follow-up before shipping.
+`/api/v1/auth/…` and pass `Authorization: Bearer <token>`. Inventory
+viewsets require authentication explicitly.
 
 ### Quick Postman sequence
 
@@ -144,7 +139,8 @@ Landed in follow-up PRs so the diff stays reviewable:
 * Purchase orders and dispatch action (`POST /purchase-orders/create/`,
   `PATCH /purchase-orders/{id}/dispatch/`).
 * Vendor `is_blocked` toggle action.
-* `Rack.is_empty` and `empty_for_how_many_days` computed properties.
+* Rack info and empty-rack endpoints are available at
+  `/api/v1/inventory/racks/{id}/info/` and `/api/v1/inventory/racks/empty/`.
 * `Section.current_stock` auto-recalculation via signals.
 * `Book.low_selling` background analytics job.
 * Project-wide `DEFAULT_PERMISSION_CLASSES = [IsAuthenticated]`.

@@ -9,6 +9,7 @@ Two conventions worth calling out:
   business rules can be tweaked without a migration.
 """
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Book, BookInventory, Rack, Section, Vendor, Warehouse
@@ -27,6 +28,9 @@ class WarehouseSerializer(serializers.ModelSerializer):
 
 
 class SectionSerializer(serializers.ModelSerializer):
+    max_capacity = serializers.IntegerField(read_only=True)
+    current_stock = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Section
         fields = [
@@ -35,17 +39,57 @@ class SectionSerializer(serializers.ModelSerializer):
             "name",
             "max_capacity",
             "current_stock",
-            "last_change_date",
-            "updated_by",
         ]
-        read_only_fields = ["current_stock", "last_change_date", "updated_by"]
 
 
 class RackSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        max_capacity = attrs.get(
+            "max_capacity",
+            self.instance.max_capacity if self.instance else 0,
+        )
+        current_stock = self.instance.current_stock if self.instance else 0
+        if max_capacity and current_stock > max_capacity:
+            raise serializers.ValidationError({
+                "max_capacity": "Maximum capacity cannot be below current stock.",
+            })
+        return attrs
+
     class Meta:
         model = Rack
-        fields = ["id", "section", "name", "last_used"]
-        read_only_fields = ["last_used"]
+        fields = [
+            "id", "section", "name", "max_capacity", "current_stock",
+            "last_change_date", "last_used", "updated_by",
+        ]
+        read_only_fields = [
+            "current_stock", "last_change_date", "last_used", "updated_by",
+        ]
+
+
+class RackInfoSerializer(RackSerializer):
+    available = serializers.SerializerMethodField()
+    is_empty = serializers.SerializerMethodField()
+    empty_for_days = serializers.SerializerMethodField()
+    books_stored = serializers.SerializerMethodField()
+
+    class Meta(RackSerializer.Meta):
+        fields = RackSerializer.Meta.fields + [
+            "available", "is_empty", "empty_for_days", "books_stored",
+        ]
+
+    def get_available(self, obj: Rack) -> int:
+        return obj.max_capacity - obj.current_stock
+
+    def get_is_empty(self, obj: Rack) -> bool:
+        return obj.current_stock == 0
+
+    def get_empty_for_days(self, obj: Rack):
+        if obj.current_stock != 0 or obj.last_used is None:
+            return None
+        return (timezone.now() - obj.last_used).days
+
+    def get_books_stored(self, obj: Rack) -> int:
+        return obj.inventory_records.count()
 
 
 class VendorSerializer(serializers.ModelSerializer):

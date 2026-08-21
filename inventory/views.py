@@ -15,15 +15,17 @@ during development and so future PRs can layer domain logic on top.
 
 from django.db import transaction
 from django.db.models import F
-from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Book, BookInventory, Rack, Section, Vendor, Warehouse
 from .serializers import (
     BookInventorySerializer,
     BookSerializer,
+    RackInfoSerializer,
     RackSerializer,
     SectionSerializer,
     StockMovementSerializer,
@@ -37,24 +39,53 @@ from .serializers import (
 # ---------------------------------------------------------------------------
 
 
+class InventoryPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class WarehouseViewSet(viewsets.ModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = InventoryPagination
 
 
 class SectionViewSet(viewsets.ModelViewSet):
-    queryset = Section.objects.select_related("warehouse", "updated_by").all()
+    queryset = Section.objects.with_rack_totals().select_related("warehouse")
     serializer_class = SectionSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = InventoryPagination
 
 
 class RackViewSet(viewsets.ModelViewSet):
-    queryset = Rack.objects.select_related("section__warehouse").all()
+    queryset = Rack.objects.select_related("section__warehouse", "updated_by").prefetch_related("inventory_records")
     serializer_class = RackSerializer
+    permission_classes = [IsAuthenticated]
+
+    pagination_class = InventoryPagination
+
+    @action(detail=True, methods=["get"], url_path="info")
+    def info(self, request, pk=None):
+        rack = self.get_object()
+        return Response(RackInfoSerializer(rack).data)
+
+    @action(detail=False, methods=["get"], url_path="empty")
+    def empty(self, request):
+        queryset = self.filter_queryset(self.get_queryset().filter(current_stock=0))
+        page = self.paginate_queryset(queryset)
+        serializer = RackInfoSerializer(page or queryset, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
 
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = InventoryPagination
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +104,7 @@ class BookViewSet(viewsets.ModelViewSet):
 
     queryset = Book.objects.all()
     serializer_class = BookSerializer
+    permission_classes = [IsAuthenticated]
 
     # -- Section 4.B.2 : POST /books/register/ ----------------------------
     @action(detail=False, methods=["post"], url_path="register")
@@ -105,7 +137,9 @@ class BookViewSet(viewsets.ModelViewSet):
         book = self.get_object()
         payload = StockMovementSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        record = self._apply_movement(book, payload.validated_data, delta=+1)
+        record = self._apply_movement(
+            book, payload.validated_data, delta=+1, actor=request.user
+        )
         return Response(BookInventorySerializer(record).data, status=status.HTTP_200_OK)
 
     # -- Section 3.A : stock out ------------------------------------------
@@ -115,25 +149,16 @@ class BookViewSet(viewsets.ModelViewSet):
         payload = StockMovementSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
-        # Guard against overselling before touching the DB.
-        record = BookInventory.objects.filter(
-            book=book,
-            rack=payload.validated_data["rack"],
-        ).first()
-        if record is None or record.curr_stock < payload.validated_data["quantity"]:
-            return Response(
-                {"detail": "Insufficient stock on the specified rack."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        record = self._apply_movement(book, payload.validated_data, delta=-1)
+        record = self._apply_movement(
+            book, payload.validated_data, delta=-1, actor=request.user
+        )
         return Response(BookInventorySerializer(record).data, status=status.HTTP_200_OK)
 
     # -- internal ---------------------------------------------------------
 
     @staticmethod
     @transaction.atomic
-    def _apply_movement(book: Book, data: dict, *, delta: int) -> BookInventory:
+    def _apply_movement(book: Book, data: dict, *, delta: int, actor=None) -> BookInventory:
         """
         Apply a stock movement atomically.
 
@@ -150,6 +175,8 @@ class BookViewSet(viewsets.ModelViewSet):
             defaults={"vendor": vendor},
         )
 
+        rack.adjust_stock(delta=delta * qty, actor=actor)
+
         if delta > 0:
             BookInventory.objects.filter(pk=record.pk).update(
                 in_entry=F("in_entry") + qty,
@@ -161,11 +188,6 @@ class BookViewSet(viewsets.ModelViewSet):
                 out_entry=F("out_entry") + qty,
                 curr_stock=F("curr_stock") - qty,
             )
-
-        # Roll the section's snapshot forward so future dashboards stay honest.
-        Section.objects.filter(pk=rack.section_id).update(
-            last_change_date=timezone.now(),
-        )
 
         record.refresh_from_db()
         return record

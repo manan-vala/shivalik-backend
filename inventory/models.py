@@ -15,6 +15,10 @@ the serializer layer to keep persisted state minimal and unambiguous.
 
 from django.conf import settings
 from django.db import models
+from django.db.models import F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 
 class TimeStampedModel(models.Model):
@@ -25,6 +29,23 @@ class TimeStampedModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class SectionManager(models.Manager):
+    def with_rack_totals(self):
+        rack_totals = Rack.objects.filter(section=OuterRef("pk"))
+        return self.get_queryset().annotate(
+            max_capacity=Coalesce(Subquery(
+                rack_totals.values("section")
+                .annotate(total=Sum("max_capacity"))
+                .values("total")
+            ), Value(0)),
+            current_stock=Coalesce(Subquery(
+                rack_totals.values("section")
+                .annotate(total=Sum("current_stock"))
+                .values("total")
+            ), Value(0)),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -49,16 +70,7 @@ class Section(TimeStampedModel):
         on_delete=models.CASCADE,
     )
     name = models.CharField(max_length=150)
-    max_capacity = models.PositiveIntegerField(default=0)
-    current_stock = models.PositiveIntegerField(default=0)
-    last_change_date = models.DateTimeField(null=True, blank=True)
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="sections_updated",
-    )
+    objects = SectionManager()
 
     class Meta:
         ordering = ["warehouse__name", "name"]
@@ -80,7 +92,17 @@ class Rack(TimeStampedModel):
         on_delete=models.CASCADE,
     )
     name = models.CharField(max_length=150)
+    max_capacity = models.PositiveIntegerField(default=0)
+    current_stock = models.PositiveIntegerField(default=0)
+    last_change_date = models.DateTimeField(null=True, blank=True)
     last_used = models.DateTimeField(null=True, blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="racks_updated",
+    )
 
     class Meta:
         ordering = ["section__warehouse__name", "section__name", "name"]
@@ -89,7 +111,29 @@ class Rack(TimeStampedModel):
                 fields=["section", "name"],
                 name="uniq_rack_name_per_section",
             ),
+            models.CheckConstraint(
+                condition=Q(max_capacity=0) | Q(current_stock__lte=F("max_capacity")),
+                name="rack_stock_within_capacity",
+            ),
         ]
+
+    def adjust_stock(self, delta: int, actor=None) -> None:
+        """Atomically adjust stock and stamp the rack's latest usage."""
+        now = timezone.now()
+        eligible = Q(current_stock__gte=-delta) if delta < 0 else Q()
+        if delta > 0:
+            eligible &= Q(max_capacity=0) | Q(current_stock__lte=F("max_capacity") - delta)
+
+        updated = type(self).objects.filter(pk=self.pk).filter(eligible).update(
+            current_stock=F("current_stock") + delta,
+            last_change_date=now,
+            last_used=now,
+            updated_by=actor,
+        )
+        if not updated:
+            if delta < 0:
+                raise ValidationError("Stock cannot go below zero.")
+            raise ValidationError("Stock exceeds rack capacity.")
 
     def __str__(self) -> str:
         return f"{self.section} / {self.name}"

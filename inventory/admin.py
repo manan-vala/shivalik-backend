@@ -17,25 +17,20 @@ class WarehouseAdmin(admin.ModelAdmin):
 
 @admin.register(Section)
 class SectionAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "name",
-        "warehouse",
-        "max_capacity",
-        "current_stock",
-        "last_change_date",
-    )
+    list_display = ("id", "name", "warehouse")
     list_filter = ("warehouse",)
     search_fields = ("name", "warehouse__name")
-    autocomplete_fields = ("warehouse", "updated_by")
+    autocomplete_fields = ("warehouse",)
 
 
 @admin.register(Rack)
 class RackAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "section", "last_used")
+    list_display = (
+        "id", "name", "section", "max_capacity", "current_stock", "last_used",
+    )
     list_filter = ("section__warehouse", "section")
     search_fields = ("name", "section__name")
-    autocomplete_fields = ("section",)
+    autocomplete_fields = ("section", "updated_by")
 
 
 @admin.register(Vendor)

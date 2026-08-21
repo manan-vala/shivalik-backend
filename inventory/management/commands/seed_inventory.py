@@ -13,17 +13,19 @@ class Command(BaseCommand):
         wh2, _ = Warehouse.objects.get_or_create(name="South City Reserve")
 
         # 2. Create Sections
-        sec1, _ = Section.objects.get_or_create(
-            warehouse=wh1, name="Fiction Wing", max_capacity=5000, current_stock=150
-        )
-        sec2, _ = Section.objects.get_or_create(
-            warehouse=wh1, name="Engineering texts", max_capacity=3000, current_stock=50
-        )
+        sec1, _ = Section.objects.get_or_create(warehouse=wh1, name="Fiction Wing")
+        sec2, _ = Section.objects.get_or_create(warehouse=wh1, name="Engineering texts")
 
         # 3. Create Racks
-        rack1, _ = Rack.objects.get_or_create(section=sec1, name="A1-Top", last_used=timezone.now())
-        rack2, _ = Rack.objects.get_or_create(section=sec1, name="A1-Bottom", last_used=timezone.now())
-        rack3, _ = Rack.objects.get_or_create(section=sec2, name="CS-101", last_used=timezone.now())
+        rack1, _ = Rack.objects.get_or_create(
+            section=sec1, name="A1-Top", defaults={"max_capacity": 2500, "last_used": timezone.now()}
+        )
+        rack2, _ = Rack.objects.get_or_create(
+            section=sec1, name="A1-Bottom", defaults={"max_capacity": 2500, "last_used": timezone.now()}
+        )
+        rack3, _ = Rack.objects.get_or_create(
+            section=sec2, name="CS-101", defaults={"max_capacity": 3000, "last_used": timezone.now()}
+        )
 
         # 4. Create Vendors
         vendor1, _ = Vendor.objects.get_or_create(
