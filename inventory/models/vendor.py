@@ -111,11 +111,11 @@ class PurchaseOrderLine(TimeStampedModel):
         ordering = ["purchase_order", "book__title"]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(quantity_ordered__gte=1),
+                condition=models.Q(quantity_ordered__gte=1),
                 name="po_line_quantity_ordered_positive",
             ),
             models.CheckConstraint(
-                check=models.Q(unit_price__gte=0),
+                condition=models.Q(unit_price__gte=0),
                 name="po_line_unit_price_not_negative",
             ),
         ]
