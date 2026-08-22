@@ -226,19 +226,19 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='book',
-            constraint=models.CheckConstraint(condition=models.Q(('mrp__gte', 0), ('mrp__isnull', True), _connector='OR'), name='book_mrp_not_negative'),
+            constraint=models.CheckConstraint(check=models.Q(('mrp__gte', 0), ('mrp__isnull', True), _connector='OR'), name='book_mrp_not_negative'),
         ),
         migrations.AddConstraint(
             model_name='book',
-            constraint=models.CheckConstraint(condition=models.Q(('tax_percent__gte', 0), ('tax_percent__lte', 100)), name='book_tax_percent_in_range'),
+            constraint=models.CheckConstraint(check=models.Q(('tax_percent__gte', 0), ('tax_percent__lte', 100)), name='book_tax_percent_in_range'),
         ),
         migrations.AddConstraint(
             model_name='book',
-            constraint=models.CheckConstraint(condition=models.Q(('default_discount_percent__gte', 0), ('default_discount_percent__lte', 100)), name='book_discount_percent_in_range'),
+            constraint=models.CheckConstraint(check=models.Q(('default_discount_percent__gte', 0), ('default_discount_percent__lte', 100)), name='book_discount_percent_in_range'),
         ),
         migrations.AddConstraint(
             model_name='rack',
-            constraint=models.CheckConstraint(condition=models.Q(('current_stock__lte', models.F('max_capacity')), ('max_capacity', 0), _connector='OR'), name='rack_stock_within_capacity'),
+            constraint=models.CheckConstraint(check=models.Q(('current_stock__lte', models.F('max_capacity')), ('max_capacity', 0), _connector='OR'), name='rack_stock_within_capacity'),
         ),
         migrations.AddField(
             model_name='purchaseorder',
@@ -287,11 +287,11 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='purchaseorderline',
-            constraint=models.CheckConstraint(condition=models.Q(('quantity_ordered__gte', 1)), name='po_line_quantity_ordered_positive'),
+            constraint=models.CheckConstraint(check=models.Q(('quantity_ordered__gte', 1)), name='po_line_quantity_ordered_positive'),
         ),
         migrations.AddConstraint(
             model_name='purchaseorderline',
-            constraint=models.CheckConstraint(condition=models.Q(('unit_price__gte', 0)), name='po_line_unit_price_not_negative'),
+            constraint=models.CheckConstraint(check=models.Q(('unit_price__gte', 0)), name='po_line_unit_price_not_negative'),
         ),
         migrations.AddIndex(
             model_name='stockmovement',
@@ -307,10 +307,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='stockmovement',
-            constraint=models.CheckConstraint(condition=models.Q(('quantity__gte', 1)), name='stockmovement_quantity_positive'),
+            constraint=models.CheckConstraint(check=models.Q(('quantity__gte', 1)), name='stockmovement_quantity_positive'),
         ),
         migrations.AddConstraint(
             model_name='stockmovement',
-            constraint=models.CheckConstraint(condition=models.Q(('movement_type__in', ['ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'WRITE_OFF']), ('reason', ''), _negated=True), name='stockmovement_reason_required'),
+            constraint=models.CheckConstraint(check=models.Q(('movement_type__in', ['ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'WRITE_OFF']), ('reason', ''), _negated=True), name='stockmovement_reason_required'),
         ),
     ]

@@ -14,7 +14,7 @@ Two conventions worth calling out:
 """
 
 from .location import RackSerializer, SectionSerializer, WarehouseSerializer
-from .vendor import VendorSerializer
+from .vendor import PurchaseOrderSerializer, VendorSerializer
 from .catalog import BookSerializer
 from .stock import (
     BookInventorySerializer,
@@ -28,6 +28,7 @@ __all__ = [
     "SectionSerializer",
     "RackSerializer",
     "VendorSerializer",
+    "PurchaseOrderSerializer",
     "BookSerializer",
     "BookInventorySerializer",
     "BookStockLevelSerializer",

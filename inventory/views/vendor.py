@@ -8,8 +8,8 @@ from rest_framework.response import Response
 
 from staff_auth.permissions import IsApprovedStaff, IsAdmin
 
-from ..models import Vendor
-from ..serializers import VendorSerializer
+from ..models import Vendor, PurchaseOrder
+from ..serializers import VendorSerializer, PurchaseOrderSerializer
 
 
 class VendorViewSet(viewsets.ModelViewSet):
@@ -57,5 +57,32 @@ class VendorViewSet(viewsets.ModelViewSet):
 
         return Response(
             {'detail': f'Vendor {vendor.company_name} has been unblocked'},
+            status=status.HTTP_200_OK
+        )
+
+
+class PurchaseOrderViewSet(viewsets.ModelViewSet):
+    queryset = PurchaseOrder.objects.prefetch_related('lines__book').all()
+    serializer_class = PurchaseOrderSerializer
+    permission_classes = [IsAuthenticated, IsApprovedStaff]
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsAdmin])
+    def dispatch_order(self, request, pk=None):
+        """
+        Dispatch a purchase order. Only admins can dispatch.
+        """
+        po = self.get_object()
+        if po.status not in (PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.PLACED):
+            return Response(
+                {'detail': f'Cannot dispatch order in {po.status} status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        po.status = PurchaseOrder.Status.DISPATCHED
+        po.dispatched_at = timezone.now()
+        po.save(update_fields=['status', 'dispatched_at'])
+        
+        return Response(
+            {'detail': f'Purchase Order {po.pk} dispatched'},
             status=status.HTTP_200_OK
         )

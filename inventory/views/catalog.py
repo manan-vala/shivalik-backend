@@ -43,3 +43,25 @@ class BookViewSet(BookStockActionsMixin, viewsets.ModelViewSet):
         already returns 201 with the Location header.
         """
         return self.create(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="run-campaign")
+    def run_campaign(self, request, pk=None):
+        """
+        Run a campaign for a low selling book. 
+        Currently a stub that just acknowledges the campaign start.
+        """
+        book = self.get_object()
+        if not book.low_selling:
+            from rest_framework import status
+            from rest_framework.response import Response
+            return Response(
+                {"detail": "This book is not marked as low selling."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        from rest_framework import status
+        from rest_framework.response import Response
+        return Response(
+            {"detail": f"Campaign started for {book.title}."},
+            status=status.HTTP_200_OK
+        )

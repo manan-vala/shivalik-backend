@@ -39,6 +39,8 @@ class Vendor(TimeStampedModel):
     notes = models.TextField(blank=True)
 
     is_blocked = models.BooleanField(default=False, db_index=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    unblocked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["company_name"]
@@ -109,11 +111,11 @@ class PurchaseOrderLine(TimeStampedModel):
         ordering = ["purchase_order", "book__title"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(quantity_ordered__gte=1),
+                check=models.Q(quantity_ordered__gte=1),
                 name="po_line_quantity_ordered_positive",
             ),
             models.CheckConstraint(
-                condition=models.Q(unit_price__gte=0),
+                check=models.Q(unit_price__gte=0),
                 name="po_line_unit_price_not_negative",
             ),
         ]

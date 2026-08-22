@@ -229,3 +229,73 @@ class StockViewSet(viewsets.GenericViewSet):
             page, many=True, context=self.get_serializer_context(),
         )
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="reorder")
+    def reorder_low_stock(self, request):
+        """Generates a DRAFT PurchaseOrder for books with low stock."""
+        queryset = _books_with_stock_totals().filter(curr_stock__lt=F("min_stock"))
+        
+        vendor_id = request.data.get("vendor_id")
+        if not vendor_id:
+            return Response({"detail": "vendor_id is required to create a purchase order."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from ..models import PurchaseOrder, PurchaseOrderLine, Vendor
+        try:
+            vendor = Vendor.objects.get(pk=vendor_id)
+        except Vendor.DoesNotExist:
+            return Response({"detail": "Vendor not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        books_to_order = list(queryset)
+        if not books_to_order:
+            return Response({"detail": "No books require reordering."}, status=status.HTTP_200_OK)
+
+        po = PurchaseOrder.objects.create(
+            vendor=vendor,
+            status=PurchaseOrder.Status.DRAFT,
+            created_by=request.user,
+            notes="Auto-generated from low stock reorder."
+        )
+        
+        lines_created = 0
+        for book in books_to_order:
+            deficit = max(book.min_stock - book.curr_stock, 1)
+            PurchaseOrderLine.objects.create(
+                purchase_order=po,
+                book=book,
+                quantity_ordered=deficit,
+                unit_price=book.mrp if book.mrp else 0.0
+            )
+            lines_created += 1
+            
+        return Response(
+            {"detail": f"Created Purchase Order {po.pk} for {lines_created} titles."},
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=False, methods=["get"], url_path="dead-stock")
+    def dead_stock(self, request):
+        """Returns inventory that hasn't moved in a specified number of days."""
+        from django.utils import timezone
+        from django.conf import settings
+        
+        queryset = BookInventory.objects.select_related('book', 'rack__section__warehouse').all()
+        
+        dead_stock_list = []
+        now = timezone.now()
+        
+        for inv in queryset:
+            threshold = inv.book.dead_stock_threshold_days or getattr(settings, 'DEAD_STOCK_DEFAULT_DAYS', 90)
+            last_activity = inv.last_out_at or inv.created_at
+            days_inactive = (now - last_activity).days
+            
+            if days_inactive > threshold and inv.curr_stock > 0:
+                dead_stock_list.append(inv)
+                
+        page = self.paginate_queryset(dead_stock_list)
+        from ..serializers import BookInventorySerializer
+        if page is not None:
+            serializer = BookInventorySerializer(page, many=True, context=self.get_serializer_context())
+            return self.get_paginated_response(serializer.data)
+            
+        serializer = BookInventorySerializer(dead_stock_list, many=True, context=self.get_serializer_context())
+        return Response(serializer.data)
