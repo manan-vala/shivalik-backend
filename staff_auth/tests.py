@@ -165,3 +165,113 @@ class PermissionLogicTests(TestCase):
 
         user = self._employee(role=Employee.Role.ADMIN, email="admin2@shivalik.test")
         self.assertFalse(Unconfigured().has_permission(self._request_for(user), None))
+
+
+from rest_framework.test import APIClient
+from django.urls import reverse
+
+class SelfSignupTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.register_url = reverse('employee-register')
+
+    def test_happy_path_signup(self):
+        data = {
+            'email': 'newguy@shivalik.test',
+            'name': 'New Guy',
+            'password': 'securepassword',
+            'phone': '1234567890',
+            'role': Employee.Role.INVENTORY_MANAGER,
+        }
+        response = self.client.post(self.register_url, data)
+        self.assertEqual(response.status_code, 201)
+        
+        # Verify db state
+        user = Employee.objects.get(email='newguy@shivalik.test')
+        self.assertEqual(user.status, Employee.Status.PENDING)
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertEqual(user.role, Employee.Role.INVENTORY_MANAGER)
+
+    def test_cannot_set_is_staff_or_status(self):
+        data = {
+            'email': 'hacker@shivalik.test',
+            'name': 'Hacker',
+            'password': 'password',
+            'status': Employee.Status.APPROVED,
+            'is_staff': True,
+            'is_superuser': True,
+            'is_active': True,
+        }
+        response = self.client.post(self.register_url, data)
+        self.assertEqual(response.status_code, 201)
+        
+        user = Employee.objects.get(email='hacker@shivalik.test')
+        self.assertEqual(user.status, Employee.Status.PENDING)
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
+    def test_validation_failure(self):
+        # Missing password
+        data = {
+            'email': 'fail@shivalik.test',
+            'name': 'Fail',
+        }
+        response = self.client.post(self.register_url, data)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
+
+
+class ApprovalQueueTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = Employee.objects.create_superuser(
+            email='admin4@shivalik.test', password='x', name='Admin4'
+        )
+        self.client.force_authenticate(user=self.admin)
+        
+        self.pending_user = Employee.objects.create_user(
+            email='pending4@shivalik.test', password='x', name='Pending',
+            status=Employee.Status.PENDING, is_active=False
+        )
+        self.approved_user = Employee.objects.create_user(
+            email='approved4@shivalik.test', password='x', name='Approved',
+            status=Employee.Status.APPROVED, is_active=True
+        )
+
+    def test_pending_list_returns_only_pending_employees(self):
+        url = reverse('employee-pending-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        emails = [item['email'] for item in response.data]
+        self.assertIn(self.pending_user.email, emails)
+        self.assertNotIn(self.approved_user.email, emails)
+
+    def test_approve_employee_sets_metadata(self):
+        url = reverse('employee-approve', args=[self.pending_user.pk])
+        response = self.client.patch(url, {'status': Employee.Status.APPROVED})
+        self.assertEqual(response.status_code, 200)
+        
+        self.pending_user.refresh_from_db()
+        self.assertEqual(self.pending_user.status, Employee.Status.APPROVED)
+        self.assertTrue(self.pending_user.is_active)
+        self.assertEqual(self.pending_user.approved_by, self.admin)
+        self.assertIsNotNone(self.pending_user.approved_at)
+        self.assertIsNone(self.pending_user.rejection_reason)
+
+    def test_reject_employee_records_reason(self):
+        url = reverse('employee-approve', args=[self.pending_user.pk])
+        response = self.client.patch(url, {
+            'status': Employee.Status.REJECTED,
+            'rejection_reason': 'Incomplete application'
+        })
+        self.assertEqual(response.status_code, 200)
+        
+        self.pending_user.refresh_from_db()
+        self.assertEqual(self.pending_user.status, Employee.Status.REJECTED)
+        self.assertFalse(self.pending_user.is_active)
+        self.assertEqual(self.pending_user.rejection_reason, 'Incomplete application')
+
+

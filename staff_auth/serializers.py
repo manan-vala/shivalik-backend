@@ -6,18 +6,41 @@ from .models import Employee, WhitelistedIP
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
-        fields = ['id', 'email', 'name', 'role', 'phone', 'address', 'salary', 'department', 'contract', 'status', 'password']
+        fields = ['id', 'email', 'name', 'role', 'phone', 'address', 'salary', 'department', 'contract', 'status', 'password', 'rejection_reason', 'approved_by', 'approved_at']
         extra_kwargs = {
-            'password': {'write_only': True, 'required': False}, # Password is not strictly required on creation
+            'password': {'write_only': True, 'required': True}, # Password is required on creation
             'status': {'read_only': True},
             'contract': {'read_only': True}, # Usually handled separately or multipart
+            'rejection_reason': {'read_only': True},
+            'approved_by': {'read_only': True},
+            'approved_at': {'read_only': True},
         }
 
     def create(self, validated_data):
-        password = validated_data.pop('password', 'password123')
+        password = validated_data.pop('password')
         # Default status is 'Pending' via model definition
         user = Employee.objects.create_user(password=password, **validated_data)
         return user
+
+
+class EmployeeRegistrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Employee
+        fields = ['email', 'name', 'password', 'phone', 'role']
+        extra_kwargs = {
+            'password': {'write_only': True, 'required': True}
+        }
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = Employee.objects.create_user(
+            password=password,
+            is_active=False,
+            status=Employee.Status.PENDING,
+            **validated_data
+        )
+        return user
+
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

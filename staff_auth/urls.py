@@ -5,10 +5,14 @@ from .views import (
     EmployeeRetrieveUpdateDestroyView,
     CustomTokenObtainPairView,
     EmployeeDetailView,
-    EmployeeApprovalView
+    EmployeeApprovalView,
+    EmployeeRegistrationView,
+    PendingEmployeeListView
 )
 
 urlpatterns = [
+    path('register/', EmployeeRegistrationView.as_view(), name='employee-register'),
+    path('staff/pending/', PendingEmployeeListView.as_view(), name='employee-pending-list'),
     path('staff/', EmployeeListCreateView.as_view(), name='employee-list-create'),
     path('staff/<int:pk>/', EmployeeRetrieveUpdateDestroyView.as_view(), name='employee-detail-update-destroy'),
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),

@@ -100,6 +100,12 @@ class Employee(AbstractBaseUser, PermissionsMixin):
         related_name='approved_employees',
     )
     approved_at = models.DateTimeField(blank=True, null=True)
+    
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Reason for rejecting the employee application."
+    )
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
