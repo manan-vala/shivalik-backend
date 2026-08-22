@@ -1,5 +1,7 @@
 """Serializers for the storage hierarchy. **Owner: Team A.**"""
 
+from typing import Optional
+
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
@@ -156,13 +158,13 @@ class RackSerializer(serializers.ModelSerializer):
     def get_is_empty(self, rack: Rack) -> bool:
         return rack.current_stock == 0
 
-    def get_empty_since_days(self, rack: Rack):
+    def get_empty_since_days(self, rack: Rack) -> Optional[int]:
         if rack.current_stock > 0:
             return None
         since = rack.last_used or rack.last_change_date or rack.created_at
         return (timezone.now() - since).days if since else 0
 
-    def get_available(self, rack: Rack):
+    def get_available(self, rack: Rack) -> Optional[int]:
         if rack.max_capacity == 0:
             return None
         return max(0, rack.max_capacity - rack.current_stock)
