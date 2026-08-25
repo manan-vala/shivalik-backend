@@ -1,6 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 from django.urls import reverse
+from django.test import override_settings
 from inventory.models import Vendor, PurchaseOrder, Book, Rack, Section, Warehouse, BookInventory
 from staff_auth.models import Employee
 
@@ -129,6 +130,7 @@ def test_purchase_order_receive_flow(admin_client, test_vendor, test_book, test_
     # Stock Movement row should exist
     assert test_book.movements.filter(movement_type="RECEIVE").exists()
 
+@override_settings(ENFORCE_ROLE_PERMISSIONS=True)
 def test_permission_denied(test_vendor):
     # Unauthenticated user
     client = APIClient()
