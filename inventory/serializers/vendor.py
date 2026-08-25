@@ -1,11 +1,16 @@
 """Serializers for suppliers and purchase orders. **Owner: Team C.**"""
 
+import re
 from rest_framework import serializers
 
 from ..models import Vendor, PurchaseOrder, PurchaseOrderLine
 
 
 class VendorSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=False, allow_blank=True)
+    purchase_orders_count = serializers.IntegerField(read_only=True)
+    last_delivery_date = serializers.DateTimeField(read_only=True)
+
     class Meta:
         model = Vendor
         fields = [
@@ -24,8 +29,20 @@ class VendorSerializer(serializers.ModelSerializer):
             "is_blocked",
             "blocked_at",
             "unblocked_at",
+            "purchase_orders_count",
+            "last_delivery_date",
         ]
-        read_only_fields = ["is_blocked", "blocked_at", "unblocked_at"]
+        read_only_fields = ["is_blocked", "blocked_at", "unblocked_at", "purchase_orders_count", "last_delivery_date"]
+
+    def validate_phone(self, value: str) -> str:
+        if value and not re.match(r'^\+?1?\d{9,15}$', value):
+            raise serializers.ValidationError("Enter a valid phone number.")
+        return value
+
+    def validate_gst_number(self, value: str) -> str:
+        if value and not re.match(r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$', value):
+            raise serializers.ValidationError("Enter a valid GSTIN.")
+        return value
 
 
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
@@ -70,6 +87,22 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["status", "dispatched_at", "received_at", "created_by", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        if self.instance and 'status' in attrs:
+            old_status = self.instance.status
+            new_status = attrs['status']
+            
+            valid_transitions = {
+                PurchaseOrder.Status.DRAFT: [PurchaseOrder.Status.PLACED, PurchaseOrder.Status.CANCELLED],
+                PurchaseOrder.Status.PLACED: [PurchaseOrder.Status.DISPATCHED, PurchaseOrder.Status.CANCELLED],
+                PurchaseOrder.Status.DISPATCHED: [PurchaseOrder.Status.RECEIVED, PurchaseOrder.Status.CANCELLED],
+                PurchaseOrder.Status.RECEIVED: [],
+                PurchaseOrder.Status.CANCELLED: [],
+            }
+            if new_status != old_status and new_status not in valid_transitions.get(old_status, []):
+                raise serializers.ValidationError(f"Cannot transition status from {old_status} to {new_status}")
+        return attrs
 
     def create(self, validated_data):
         lines_data = validated_data.pop("lines", [])
