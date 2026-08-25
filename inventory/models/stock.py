@@ -267,10 +267,10 @@ class StockMovement(TimeStampedModel):
             ),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(quantity__gte=1),
+            models.CheckConstraint(condition=models.Q(quantity__gte=1),
                 name="stockmovement_quantity_positive",
             ),
-            models.CheckConstraint(check=~(
+            models.CheckConstraint(condition=~(
                     models.Q(movement_type__in=sorted(REASON_REQUIRED_TYPES))
                     & models.Q(reason="")
                 ),

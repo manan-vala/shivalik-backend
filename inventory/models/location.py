@@ -175,7 +175,7 @@ class Rack(TimeStampedModel):
                 condition=~models.Q(code=""),
                 name="uniq_rack_code_per_section_when_set",
             ),
-            models.CheckConstraint(check=models.Q(current_stock__lte=models.F("max_capacity"))
+            models.CheckConstraint(condition=models.Q(current_stock__lte=models.F("max_capacity"))
                 | models.Q(max_capacity=0),
                 name="rack_stock_within_capacity",
             ),
