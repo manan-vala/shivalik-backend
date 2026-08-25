@@ -47,7 +47,7 @@ class VendorViewSet(viewsets.ModelViewSet):
     def purchase_orders(self, request, pk=None):
         """List purchase orders for this vendor."""
         vendor = self.get_object()
-        pos = vendor.purchase_orders.prefetch_related('lines__book').all()
+        pos = vendor.purchase_orders.prefetch_related('lines__book').select_related('vendor', 'created_by').all()
         page = self.paginate_queryset(pos)
         if page is not None:
             serializer = PurchaseOrderSerializer(page, many=True)
@@ -100,7 +100,7 @@ class VendorViewSet(viewsets.ModelViewSet):
 
 
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
-    queryset = PurchaseOrder.objects.prefetch_related('lines__book').all()
+    queryset = PurchaseOrder.objects.prefetch_related('lines__book').select_related('vendor', 'created_by').all()
     serializer_class = PurchaseOrderSerializer
     permission_classes = [IsAuthenticated, IsApprovedStaff]
     filter_backends = [DjangoFilterBackend]

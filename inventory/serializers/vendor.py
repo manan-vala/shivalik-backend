@@ -86,22 +86,36 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["status", "dispatched_at", "received_at", "created_by", "created_at", "updated_at"]
+        read_only_fields = ["dispatched_at", "received_at", "created_by", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        if self.instance and 'status' in attrs:
+        if not self.instance:
+            if 'status' in attrs and attrs['status'] not in [PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.PLACED]:
+                raise serializers.ValidationError({"status": "New purchase orders must be created as DRAFT or PLACED."})
+
+        if self.instance:
             old_status = self.instance.status
-            new_status = attrs['status']
             
-            valid_transitions = {
-                PurchaseOrder.Status.DRAFT: [PurchaseOrder.Status.PLACED, PurchaseOrder.Status.CANCELLED],
-                PurchaseOrder.Status.PLACED: [PurchaseOrder.Status.DISPATCHED, PurchaseOrder.Status.CANCELLED],
-                PurchaseOrder.Status.DISPATCHED: [PurchaseOrder.Status.RECEIVED, PurchaseOrder.Status.CANCELLED],
-                PurchaseOrder.Status.RECEIVED: [],
-                PurchaseOrder.Status.CANCELLED: [],
-            }
-            if new_status != old_status and new_status not in valid_transitions.get(old_status, []):
-                raise serializers.ValidationError(f"Cannot transition status from {old_status} to {new_status}")
+            if 'status' in attrs:
+                new_status = attrs['status']
+                if new_status != old_status:
+                    if new_status in [PurchaseOrder.Status.DISPATCHED, PurchaseOrder.Status.RECEIVED]:
+                        raise serializers.ValidationError({"status": f"Cannot manually transition to {new_status}. Use dedicated endpoints."})
+                    
+                    valid_transitions = {
+                        PurchaseOrder.Status.DRAFT: [PurchaseOrder.Status.PLACED, PurchaseOrder.Status.CANCELLED],
+                        PurchaseOrder.Status.PLACED: [PurchaseOrder.Status.CANCELLED],
+                        PurchaseOrder.Status.DISPATCHED: [PurchaseOrder.Status.CANCELLED],
+                        PurchaseOrder.Status.RECEIVED: [],
+                        PurchaseOrder.Status.CANCELLED: [],
+                    }
+                    if new_status not in valid_transitions.get(old_status, []):
+                        raise serializers.ValidationError({"status": f"Cannot transition status from {old_status} to {new_status}."})
+            
+            if 'lines' in attrs:
+                if old_status not in [PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.PLACED]:
+                    raise serializers.ValidationError({"lines": "Cannot modify line items unless order is in DRAFT or PLACED state."})
+                    
         return attrs
 
     def create(self, validated_data):
