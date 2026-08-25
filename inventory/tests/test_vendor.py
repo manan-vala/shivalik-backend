@@ -128,3 +128,20 @@ def test_purchase_order_receive_flow(admin_client, test_vendor, test_book, test_
     
     # Stock Movement row should exist
     assert test_book.movements.filter(movement_type="RECEIVE").exists()
+
+def test_permission_denied(test_vendor):
+    # Unauthenticated user
+    client = APIClient()
+    
+    list_url = reverse('inventory:vendor-list')
+    assert client.get(list_url).status_code == 401
+    
+    block_url = reverse('inventory:vendor-block', kwargs={'pk': test_vendor.pk})
+    assert client.patch(block_url).status_code == 401
+    
+    # Authenticated but not approved/admin
+    user = Employee.objects.create(email="user@example.com", password="pass")
+    client.force_authenticate(user=user)
+    
+    assert client.get(list_url).status_code == 403
+    assert client.patch(block_url).status_code == 403
