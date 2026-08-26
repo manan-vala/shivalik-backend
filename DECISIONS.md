@@ -136,6 +136,33 @@ been rewritten from "give it a fallback" to "use a `SerializerMethodField`".
    two different shapes depending on the verb. A test now asserts
    GET/POST/PATCH produce identical key sets.
 
+## Bugs found running the backend for the first time
+
+Everything green until now came from `pytest` and `manage.py check`. Booting
+the app and driving it over HTTP found something neither could:
+
+1. **The IP allow-list locked every deployment out of its own API.**
+   `CustomTokenObtainPairSerializer.validate()` refused any client whose IP had
+   no `WhitelistedIP` row. That table starts empty and **nothing seeds it** —
+   not a migration, not `seed_inventory`, not the README — so on a fresh
+   database `/api/v1/auth/login/` returned 401 to correct superuser
+   credentials, and every authenticated endpoint in the project was
+   unreachable behind a token nobody could obtain.
+
+   It survived review because the login route had **no passing-path test at
+   all**. The only coverage, `api.tests.test_login_is_reachable_without_a
+   _token`, posts `{}`; that 400s on field validation *before* `validate()`
+   runs, so the allow-list was never exercised in the suite.
+
+   Now gated on `ENFORCE_IP_ALLOWLIST`, defaulting to `not DEBUG` — the same
+   shape as `ENFORCE_ROLE_PERMISSIONS`. `LoginIPAllowlistTests` covers the
+   route properly: enforced-and-listed, enforced-and-unlisted, unenforced, and
+   that relaxing the IP check does not relax the approval or password gates.
+
+   The allow-list is still the intended production control. Populate it via
+   `/admin/` **before** setting `ENFORCE_IP_ALLOWLIST=true`, or you will
+   reproduce the lockout deliberately.
+
 ## Known gaps left open on purpose
 
 * **`H-4`** — the hardcoded `'password123'` default in
