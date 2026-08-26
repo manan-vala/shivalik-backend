@@ -39,6 +39,8 @@ class Vendor(TimeStampedModel):
     notes = models.TextField(blank=True)
 
     is_blocked = models.BooleanField(default=False, db_index=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    unblocked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["company_name"]

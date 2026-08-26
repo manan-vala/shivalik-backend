@@ -16,9 +16,25 @@ Q14 answered: the read surface lives under the top-level `stock/` resource
 alias. `books/{id}/history|in-entries|out-entries/` stay on `BookViewSet`
 since they are naturally detail routes on a book.
 """
+
+from datetime import timedelta
+from decimal import Decimal
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import F, IntegerField, OuterRef, Subquery, Sum
+from django.db import transaction
+from django.db.models import (
+    DurationField,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    OuterRef,
+    Subquery,
+    Sum,
+    Value,
+)
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -34,7 +50,10 @@ from ..models import (
     BookInventory,
     InsufficientStockError,
     MovementType,
+    PurchaseOrder,
+    PurchaseOrderLine,
     StockMovement,
+    Vendor,
     apply_stock_movement,
 )
 from ..serializers import (
@@ -231,3 +250,112 @@ class StockViewSet(viewsets.GenericViewSet):
             page, many=True, context=self.get_serializer_context(),
         )
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="reorder", url_name="reorder")
+    def reorder_low_stock(self, request):
+        """
+        Generate a DRAFT PurchaseOrder covering every book below `min_stock`.
+
+        One transaction: either the whole order and all of its lines land, or
+        none of it does. A half-written PO is worse than no PO.
+        """
+        vendor_id = request.data.get("vendor_id")
+        if not vendor_id:
+            return Response(
+                {"detail": "vendor_id is required to create a purchase order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            vendor = Vendor.objects.get(pk=vendor_id)
+        except (Vendor.DoesNotExist, ValueError, TypeError):
+            return Response(
+                {"detail": "Vendor not found."}, status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if vendor.is_blocked:
+            return Response(
+                {"detail": "Vendor is blocked."}, status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        books_to_order = list(
+            _books_with_stock_totals().filter(curr_stock__lt=F("min_stock"))
+        )
+        if not books_to_order:
+            return Response(
+                {"detail": "No books require reordering."}, status=status.HTTP_200_OK,
+            )
+
+        with transaction.atomic():
+            po = PurchaseOrder.objects.create(
+                vendor=vendor,
+                status=PurchaseOrder.Status.DRAFT,
+                created_by=request.user,
+                notes="Auto-generated from low stock reorder.",
+            )
+            # `unit_price` is a DecimalField — Q5, money is never a float. A
+            # book with no MRP is ordered at 0 and priced when the PO is
+            # confirmed, rather than being silently dropped from the order.
+            PurchaseOrderLine.objects.bulk_create([
+                PurchaseOrderLine(
+                    purchase_order=po,
+                    book=book,
+                    quantity_ordered=max(book.min_stock - book.curr_stock, 1),
+                    unit_price=book.mrp if book.mrp is not None else Decimal("0.00"),
+                )
+                for book in books_to_order
+            ])
+
+        return Response(
+            {
+                "detail": f"Created Purchase Order {po.pk} for {len(books_to_order)} titles.",
+                "purchase_order": po.pk,
+                "lines": len(books_to_order),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["get"], url_path="dead-stock")
+    def dead_stock(self, request):
+        """
+        Inventory rows holding stock that has not moved out for longer than
+        the title's `dead_stock_threshold_days` (falling back to
+        `settings.DEAD_STOCK_DEFAULT_DAYS`).
+
+        Q9: dead stock is computed on read, never stored. The comparison is
+        done in SQL — the first cut of this endpoint pulled every
+        `BookInventory` row into Python and looped, which does not survive a
+        real warehouse's row count and cannot be paginated in the database.
+        """
+        default_days = getattr(settings, "DEAD_STOCK_DEFAULT_DAYS", 90)
+
+        inactive_for = ExpressionWrapper(
+            Value(timezone.now()) - Coalesce(F("last_out_at"), F("created_at")),
+            output_field=DurationField(),
+        )
+        dead_after = ExpressionWrapper(
+            Coalesce(F("book__dead_stock_threshold_days"), Value(default_days))
+            * Value(timedelta(days=1)),
+            output_field=DurationField(),
+        )
+
+        queryset = (
+            BookInventory.objects
+            .filter(curr_stock__gt=0)
+            .select_related("book", "rack__section__warehouse")
+            .annotate(inactive_for=inactive_for, dead_after=dead_after)
+            .filter(inactive_for__gt=F("dead_after"))
+            .order_by("-inactive_for")
+        )
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = BookInventorySerializer(
+                page, many=True, context=self.get_serializer_context(),
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = BookInventorySerializer(
+            queryset, many=True, context=self.get_serializer_context(),
+        )
+        return Response(serializer.data)

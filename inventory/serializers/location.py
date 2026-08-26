@@ -1,6 +1,7 @@
 """Serializers for the storage hierarchy. **Owner: Team A.**"""
 
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework import serializers
 
 from ..models import Rack, Section, Warehouse
@@ -99,6 +100,10 @@ class RackSerializer(serializers.ModelSerializer):
         source="section.warehouse.name", read_only=True
     )
     section_name = serializers.CharField(source="section.name", read_only=True)
+    is_empty = serializers.SerializerMethodField()
+    empty_since_days = serializers.SerializerMethodField()
+    available = serializers.SerializerMethodField()
+    books_stored = serializers.IntegerField(source="current_stock", read_only=True)
 
     class Meta:
         model = Rack
@@ -112,6 +117,10 @@ class RackSerializer(serializers.ModelSerializer):
             "is_active",
             "max_capacity",
             "current_stock",
+            "books_stored",
+            "available",
+            "is_empty",
+            "empty_since_days",
             "last_change_date",
             "last_used",
             "updated_by",
@@ -143,3 +152,17 @@ class RackSerializer(serializers.ModelSerializer):
                 f"capacity cannot be set below that. Move stock off it first."
             )
         return value
+
+    def get_is_empty(self, rack: Rack) -> bool:
+        return rack.current_stock == 0
+
+    def get_empty_since_days(self, rack: Rack) -> int | None:
+        if rack.current_stock > 0:
+            return None
+        since = rack.last_used or rack.last_change_date or rack.created_at
+        return (timezone.now() - since).days if since else 0
+
+    def get_available(self, rack: Rack) -> int | None:
+        if rack.max_capacity == 0:
+            return None
+        return max(0, rack.max_capacity - rack.current_stock)

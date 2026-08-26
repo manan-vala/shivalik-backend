@@ -12,7 +12,7 @@ accidental public endpoint visible in review.
 """
 
 from .location import RackViewSet, SectionViewSet, WarehouseViewSet
-from .vendor import VendorViewSet
+from .vendor import PurchaseOrderViewSet, VendorViewSet
 from .catalog import BookViewSet
 from .stock import BookStockActionsMixin, StockViewSet
 
@@ -21,6 +21,7 @@ __all__ = [
     "SectionViewSet",
     "RackViewSet",
     "VendorViewSet",
+    "PurchaseOrderViewSet",
     "BookViewSet",
     "BookStockActionsMixin",
     "StockViewSet",
