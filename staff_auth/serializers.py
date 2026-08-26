@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
@@ -34,8 +35,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         ip = self.get_client_ip(request)
 
         # 1. IP Whitelist Check
-        if not WhitelistedIP.objects.filter(ip_address=ip).exists():
-            raise AuthenticationFailed(f'IP Address {ip} is not whitelisted. Access Denied.')
+        #
+        # Gated on ENFORCE_IP_ALLOWLIST (default: on unless DEBUG). The
+        # `WhitelistedIP` table starts empty and nothing seeds it, so enforcing
+        # this on a fresh database refuses every login — the superuser's
+        # included — and locks the whole API behind a token nobody can obtain.
+        if settings.ENFORCE_IP_ALLOWLIST:
+            if not WhitelistedIP.objects.filter(ip_address=ip).exists():
+                raise AuthenticationFailed(f'IP Address {ip} is not whitelisted. Access Denied.')
 
         data = super().validate(attrs)
 

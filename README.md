@@ -39,6 +39,16 @@ python manage.py runserver
 | `http://127.0.0.1:8000/api/schema/` | raw OpenAPI schema |
 | `http://127.0.0.1:8000/admin/` | Django admin |
 
+Log in at `POST /api/v1/auth/login/` with the superuser you just created to get
+a JWT, and send it as `Authorization: Bearer <access>`.
+
+### Before you turn the IP allow-list on
+
+`ENFORCE_IP_ALLOWLIST` follows `DEBUG` — off locally, on in anything deployed.
+When it is on, login refuses any client whose IP has no `WhitelistedIP` row,
+and **that table starts empty**. Add your rows through `/admin/` *first*;
+enabling it on an empty allow-list locks out everyone, superuser included.
+
 ### Why PostgreSQL is not optional
 
 The core operation of this system is concurrent stock mutation, guarded by

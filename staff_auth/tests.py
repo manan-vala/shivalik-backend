@@ -9,7 +9,7 @@ debugging the check itself under time pressure.
 
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
-from .models import Employee
+from .models import Employee, WhitelistedIP
 from .permissions import (
     IsAdmin,
     IsApprovedStaff,
@@ -165,3 +165,84 @@ class PermissionLogicTests(TestCase):
 
         user = self._employee(role=Employee.Role.ADMIN, email="admin2@shivalik.test")
         self.assertFalse(Unconfigured().has_permission(self._request_for(user), None))
+
+
+class LoginIPAllowlistTests(TestCase):
+    """
+    The login route, which had no passing-path coverage at all.
+
+    `WhitelistedIP` starts empty and nothing seeds it, so enforcing the
+    allow-list unconditionally meant a fresh database could not issue a single
+    token — every authenticated endpoint in the project was unreachable, the
+    superuser's included. It survived review because the only login test
+    (`api.tests`) posts `{}`, which 400s on field validation before
+    `validate()` — and therefore before the allow-list — ever runs.
+
+    `ENFORCE_IP_ALLOWLIST` now gates it, defaulting to `not DEBUG`. Django
+    forces `DEBUG=False` under test, so the flag is *on* here unless a case
+    says otherwise.
+    """
+
+    LOGIN_URL = "/api/v1/auth/login/"
+    PASSWORD = "not-a-default-password"
+
+    def setUp(self):
+        self.employee = Employee.objects.create_user(
+            email="ops@shivalik.test",
+            password=self.PASSWORD,
+            name="Ops",
+            role=Employee.Role.INVENTORY_MANAGER,
+            status=Employee.Status.APPROVED,
+        )
+
+    def _login(self, email=None, password=None):
+        return self.client.post(
+            self.LOGIN_URL,
+            {
+                "email": email or self.employee.email,
+                "password": password or self.PASSWORD,
+            },
+            content_type="application/json",
+        )
+
+    @override_settings(ENFORCE_IP_ALLOWLIST=True)
+    def test_unlisted_ip_is_refused_when_enforced(self):
+        response = self._login()
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("not whitelisted", response.json()["detail"])
+
+    @override_settings(ENFORCE_IP_ALLOWLIST=True)
+    def test_listed_ip_gets_a_token_when_enforced(self):
+        WhitelistedIP.objects.create(
+            ip_address="127.0.0.1", description="test client",
+        )
+        response = self._login()
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("access", body)
+        self.assertIn("refresh", body)
+        self.assertEqual(body["email"], self.employee.email)
+
+    @override_settings(ENFORCE_IP_ALLOWLIST=False)
+    def test_empty_allowlist_does_not_lock_everyone_out_when_not_enforced(self):
+        """The regression this flag exists for."""
+        self.assertFalse(WhitelistedIP.objects.exists())
+        response = self._login()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn("access", response.json())
+
+    @override_settings(ENFORCE_IP_ALLOWLIST=False)
+    def test_approval_gate_still_applies_with_the_allowlist_off(self):
+        """Relaxing the IP check must not relax anything else."""
+        self.employee.status = Employee.Status.PENDING
+        self.employee.save(update_fields=["status"])
+
+        response = self._login()
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("approval", response.json()["detail"].lower())
+
+    @override_settings(ENFORCE_IP_ALLOWLIST=False)
+    def test_wrong_password_is_still_refused_with_the_allowlist_off(self):
+        response = self._login(password="wrong-password")
+        self.assertEqual(response.status_code, 401)

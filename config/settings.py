@@ -256,6 +256,14 @@ DEFAULT_CURRENCY = "INR"
 # Turning this on without filling in `allowed_roles` denies everyone.
 ENFORCE_ROLE_PERMISSIONS = env_bool("ENFORCE_ROLE_PERMISSIONS", default=False)
 
+# The login IP allow-list (Team D). `WhitelistedIP` starts empty and nothing
+# seeds it, so enforcing it unconditionally means a fresh database cannot
+# issue a single token — the whole API is unreachable, including `/admin/`'s
+# API counterpart. That is correct for a deployment where the allow-list has
+# been populated deliberately, and a lockout everywhere else, so it follows
+# DEBUG: off while developing, on the moment DEBUG is.
+ENFORCE_IP_ALLOWLIST = env_bool("ENFORCE_IP_ALLOWLIST", default=not DEBUG)
+
 # Q9 — dead stock is computed on read, not persisted. Per-book overrides live
 # on `Book.dead_stock_threshold_days`; this is the fallback.
 DEAD_STOCK_DEFAULT_DAYS = env_int("DEAD_STOCK_DEFAULT_DAYS", default=90)
