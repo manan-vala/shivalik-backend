@@ -163,11 +163,59 @@ the app and driving it over HTTP found something neither could:
    `/admin/` **before** setting `ENFORCE_IP_ALLOWLIST=true`, or you will
    reproduce the lockout deliberately.
 
+## Bugs found reviewing Team D's signup and approval branch
+
+The branch (Tasks 3–5) sat unmerged for five days with no PR, so none of it had
+ever run in CI. Review before merging found:
+
+1. **A self-signup could pick its own role.** `EmployeeRegistrationSerializer`
+   wrote the applicant's `role` straight into `Employee.role` — the field
+   `RoleBasedPermission` gates on. Approval sets `status`, not `role`, so
+   anyone who registered as `ADMIN` and got approved *was* an admin the moment
+   `ENFORCE_ROLE_PERMISSIONS` was turned on, and the approving admin saw a role
+   that already looked assigned. The task file asks only for a **requested**
+   role, and `Employee.role`'s own help text says "Null until an admin assigns
+   one".
+
+   Split into `Employee.requested_role`, which no permission class reads.
+   `test_asking_for_admin_does_not_survive_approval` signs up asking for
+   `ADMIN`, approves, and asserts `IsAdmin` still refuses.
+
+2. **`test_pending_list_returns_only_pending_employees` could not pass.** It
+   iterated `response.data` directly, but pagination is project-wide (`M-5`),
+   so that walks the envelope's keys and `'count'['email']` raises
+   `TypeError`. Nothing caught it because the branch had no PR and so no CI.
+
+3. **`Employee` had no `Meta.ordering`.** Every inventory model has one; the
+   user model did not, so the new paginated `/staff/pending/` queryset drew
+   `UnorderedObjectListWarning` — rows may repeat or vanish between pages.
+   Ordered by `['name', 'id']`, with `id` as the tiebreaker since `name` is
+   not unique.
+
+4. **`registered_ip` was still never populated.** `0002` added it "for
+   auditing the approval" and signup is the only code path that can fill it.
+   Now captured, via a `get_client_ip` helper lifted out of
+   `CustomTokenObtainPairSerializer` so login and signup cannot disagree about
+   who the caller is.
+
+5. **A rejection could be recorded with no reason**, which is the one thing
+   `rejection_reason` exists to prevent — and the rejected applicant has no
+   other way to find out why. Now a 400.
+
+6. **`role` and `requested_role` share a choice set**, so drf-spectacular
+   emitted two identically-shaped enums and the schema smoke test failed.
+   Collapsed to one `RoleEnum` via `ENUM_NAME_OVERRIDES`, which needs a
+   module-level `ROLE_CHOICES` alias because that setting resolves its value
+   with `import_string` and cannot traverse into a nested class.
+
+* ~~**`H-4`** — the hardcoded `'password123'` default~~ **closed.** A password
+  is now required at signup and at admin staff-creation, and both run Django's
+  configured `AUTH_PASSWORD_VALIDATORS` — which serializers never reach on
+  their own, so requiring a password without validating it would have left
+  `'password'` acceptable.
+
 ## Known gaps left open on purpose
 
-* **`H-4`** — the hardcoded `'password123'` default in
-  `staff_auth/serializers.py` is untouched. It is Team D's Task 5, and it now
-  sits behind an authenticated admin-only route.
 * ~~**`H-1`** — the stock-out race~~ **closed.** The racy check and
   `_apply_movement` are both deleted; both stock routes call
   `apply_stock_movement()`, which re-checks under its lock.
