@@ -21,7 +21,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import (
     DurationField,
@@ -38,6 +37,7 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -88,6 +88,23 @@ def _books_with_stock_totals():
     )
 
 
+def _actor(request):
+    """
+    The employee a movement is booked against — never a stand-in.
+
+    `permission_classes` on the consuming viewsets already refuses an
+    anonymous caller, so in normal operation this never fires. It is here
+    because `595b66b` relaxed exactly that assumption: when the caller was
+    anonymous it fell back to `User.objects.first()`, silently putting an
+    arbitrary employee's name against stock nobody moved. A ledger that
+    invents an actor is worse than one that refuses the write, so the refusal
+    lives next to the write as well as in the permission layer.
+    """
+    if not request.user.is_authenticated:
+        raise NotAuthenticated()
+    return request.user
+
+
 class BookStockActionsMixin:
     """
     The stock lifecycle half of `BookViewSet`.
@@ -122,15 +139,13 @@ class BookStockActionsMixin:
         book = self.get_object()
         payload = StockMovementRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        User = get_user_model()
-        current_actor = request.user if request.user.is_authenticated else User.objects.first()
 
         record = apply_stock_movement(
             book=book,
             rack=payload.validated_data["rack"],
             quantity=payload.validated_data["quantity"],
             movement_type=MovementType.IN,
-            actor=current_actor,
+            actor=_actor(request),
             vendor=payload.validated_data["vendor"],
         )
         return Response(BookInventorySerializer(record).data, status=status.HTTP_200_OK)
@@ -153,7 +168,7 @@ class BookStockActionsMixin:
                 rack=payload.validated_data["rack"],
                 quantity=payload.validated_data["quantity"],
                 movement_type=MovementType.OUT,
-                actor=request.user,
+                actor=_actor(request),
             )
         except InsufficientStockError:
             return Response(

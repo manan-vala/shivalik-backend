@@ -7,13 +7,24 @@ an operator actually makes.
 """
 
 import threading
+from unittest import mock
 
 import pytest
 from django.db import connections
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.test import APIClient, APITestCase, APITransactionTestCase
 
-from inventory.models import Book, BookInventory, Rack, Section, Vendor, Warehouse
+from inventory.models import (
+    Book,
+    BookInventory,
+    Rack,
+    Section,
+    StockMovement,
+    Vendor,
+    Warehouse,
+)
+from inventory.views import BookViewSet
 from staff_auth.models import Employee
 
 
@@ -403,6 +414,69 @@ class StockActionTests(InventoryAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["rack_location"], "Main / A / A-1")
         self.assertEqual(response.data[0]["curr_stock"], 4)
+
+    def test_stock_in_records_the_caller_as_actor(self):
+        """
+        The movement is attributed to whoever made the request.
+
+        `595b66b` fell back to `User.objects.first()` when the caller was
+        anonymous, which put an arbitrary employee's name against stock they
+        never touched. Removed — this pins the attribution.
+        """
+        self._stock_in(6)
+        movement = self.book.movements.get()
+        self.assertEqual(movement.actor, self.staff)
+
+    def test_anonymous_stock_in_is_401_and_writes_nothing(self):
+        """
+        An unauthenticated stock-in is refused outright rather than booked
+        against a stand-in actor. Both halves matter: the status code, and
+        the ledger staying empty behind it.
+        """
+        anonymous = APIClient()
+        response = anonymous.post(
+            f"/api/v1/inventory/books/{self.book.pk}/stock-in/",
+            {"rack": self.rack.pk, "vendor": self.vendor.pk, "quantity": 5},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertFalse(StockMovement.objects.exists())
+        self.assertFalse(BookInventory.objects.filter(curr_stock__gt=0).exists())
+        self.rack.refresh_from_db()
+        self.assertEqual(self.rack.current_stock, 0)
+
+    def test_stock_routes_still_401_with_permissions_relaxed(self):
+        """
+        The one that actually pins `595b66b`.
+
+        `IsAuthenticated` refuses an anonymous caller before the view body
+        runs, so the `User.objects.first()` fallback that lived there was
+        unreachable over HTTP and no ordinary test could see it. It only
+        mattered if someone relaxed the permission classes — which is
+        precisely why it was added. With them relaxed, the routes must still
+        refuse rather than attribute the movement to an arbitrary employee.
+        """
+        anonymous = APIClient()
+        payload = {"rack": self.rack.pk, "vendor": self.vendor.pk, "quantity": 5}
+
+        with mock.patch.object(BookViewSet, "permission_classes", [AllowAny]):
+            for route in ("stock-in", "stock-out"):
+                with self.subTest(route=route):
+                    response = anonymous.post(
+                        f"/api/v1/inventory/books/{self.book.pk}/{route}/",
+                        payload,
+                        format="json",
+                    )
+                    self.assertEqual(
+                        response.status_code,
+                        status.HTTP_401_UNAUTHORIZED,
+                        f"{route} accepted an anonymous caller: {response.data}",
+                    )
+
+        self.assertFalse(StockMovement.objects.exists())
+        self.rack.refresh_from_db()
+        self.assertEqual(self.rack.current_stock, 0)
 
 
 @pytest.mark.postgres_only
