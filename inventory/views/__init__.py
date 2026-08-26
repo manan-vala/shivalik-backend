@@ -12,7 +12,7 @@ accidental public endpoint visible in review.
 """
 
 from .location import RackViewSet, SectionViewSet, WarehouseViewSet
-from .vendor import VendorViewSet, PurchaseOrderViewSet
+from .vendor import PurchaseOrderViewSet, VendorViewSet
 from .catalog import BookViewSet
 from .stock import BookStockActionsMixin, StockViewSet
 

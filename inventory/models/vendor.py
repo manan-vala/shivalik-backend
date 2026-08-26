@@ -5,7 +5,7 @@ Suppliers and purchase orders.
 
 Q8 answered: a purchase order is a **header plus lines**. The ERD's
 ``PurchaseOrder(book_id, vendor_id)`` sketches the relationship, not the
-document — one PO per title is not how any warehouse orderuse teamC vendor.md file to understand what all tasks need to be done and what all has been done and do it then giving a plans.
+document — one PO per title is not how any warehouse orders.
 
 Q6 (how to store ``categories_supplied``) is Team C's alone. It is landed here
 as a ``JSONField`` so the Day-3 schema is complete; swapping it for a Postgres
@@ -110,10 +110,12 @@ class PurchaseOrderLine(TimeStampedModel):
     class Meta:
         ordering = ["purchase_order", "book__title"]
         constraints = [
-            models.CheckConstraint(condition=models.Q(quantity_ordered__gte=1),
+            models.CheckConstraint(
+                condition=models.Q(quantity_ordered__gte=1),
                 name="po_line_quantity_ordered_positive",
             ),
-            models.CheckConstraint(condition=models.Q(unit_price__gte=0),
+            models.CheckConstraint(
+                condition=models.Q(unit_price__gte=0),
                 name="po_line_unit_price_not_negative",
             ),
         ]

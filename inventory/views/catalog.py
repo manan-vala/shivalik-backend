@@ -1,8 +1,9 @@
 """Book catalog viewset. **Owner: Team B.**"""
 
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from staff_auth.permissions import IsApprovedStaff
 
@@ -47,21 +48,21 @@ class BookViewSet(BookStockActionsMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="run-campaign")
     def run_campaign(self, request, pk=None):
         """
-        Run a campaign for a low selling book. 
-        Currently a stub that just acknowledges the campaign start.
+        Kick off a promotional campaign for a low-selling title.
+
+        **Stub** — acknowledges the request and validates that the book is
+        actually flagged `low_selling`. Wiring it to a real campaign runner is
+        still open; the route and its contract are published now so the
+        frontend can build against them.
         """
         book = self.get_object()
         if not book.low_selling:
-            from rest_framework import status
-            from rest_framework.response import Response
             return Response(
                 {"detail": "This book is not marked as low selling."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
-        from rest_framework import status
-        from rest_framework.response import Response
+
         return Response(
             {"detail": f"Campaign started for {book.title}."},
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )

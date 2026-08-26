@@ -1,9 +1,10 @@
 """Serializers for suppliers and purchase orders. **Owner: Team C.**"""
 
 import re
+
 from rest_framework import serializers
 
-from ..models import Vendor, PurchaseOrder, PurchaseOrderLine
+from ..models import PurchaseOrder, PurchaseOrderLine, Vendor
 
 
 class VendorSerializer(serializers.ModelSerializer):
@@ -32,7 +33,13 @@ class VendorSerializer(serializers.ModelSerializer):
             "purchase_orders_count",
             "last_delivery_date",
         ]
-        read_only_fields = ["is_blocked", "blocked_at", "unblocked_at", "purchase_orders_count", "last_delivery_date"]
+        read_only_fields = [
+            "is_blocked",
+            "blocked_at",
+            "unblocked_at",
+            "purchase_orders_count",
+            "last_delivery_date",
+        ]
 
     def validate_phone(self, value: str) -> str:
         if value and not re.match(r'^\+?1?\d{9,15}$', value):
@@ -86,7 +93,13 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["dispatched_at", "received_at", "created_by", "created_at", "updated_at"]
+        read_only_fields = [
+            "dispatched_at",
+            "received_at",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate(self, attrs):
         if not self.instance:

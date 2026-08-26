@@ -5,12 +5,12 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     BookViewSet,
+    PurchaseOrderViewSet,
     RackViewSet,
     SectionViewSet,
     StockViewSet,
     VendorViewSet,
     WarehouseViewSet,
-    PurchaseOrderViewSet,
 )
 
 app_name = "inventory"

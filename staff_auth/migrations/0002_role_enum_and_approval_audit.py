@@ -28,7 +28,7 @@ ROLE_VALUES = [
 ]
 
 
-def _normalise(raw: str):
+def _normalise(raw: str) -> str | None:
     """"Inventory Manager", " inventory-manager " -> "INVENTORY_MANAGER"."""
     candidate = raw.strip().upper().replace(' ', '_').replace('-', '_')
     return candidate if candidate in ROLE_VALUES else None

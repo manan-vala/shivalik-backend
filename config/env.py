@@ -59,7 +59,7 @@ def env_int(name: str, default: int) -> int:
         ) from exc
 
 
-def env_list(name: str, default=None):
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
     """Parse a comma-separated list, dropping blanks and surrounding spaces."""
     raw = env(name, "")
     if not raw:

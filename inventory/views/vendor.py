@@ -1,19 +1,27 @@
 """Viewsets for suppliers and purchase orders. **Owner: Team C.**"""
 
-from django.db.models import Count, Max, Q
+from django.db import transaction
+from django.db.models import Count, F, Max, Q
 from django.utils import timezone
-from rest_framework import status, viewsets, filters
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
 
-from staff_auth.permissions import IsApprovedStaff, IsAdmin
+from staff_auth.permissions import IsAdmin, IsApprovedStaff
 
-from django.db import transaction
-from rest_framework.exceptions import ValidationError
-from ..models import Vendor, PurchaseOrder, PurchaseOrderLine, Rack, MovementType, apply_stock_movement
-from ..serializers import VendorSerializer, PurchaseOrderSerializer
+from ..models import (
+    InsufficientStockError,
+    MovementType,
+    PurchaseOrder,
+    PurchaseOrderLine,
+    Rack,
+    Vendor,
+    apply_stock_movement,
+)
+from ..serializers import PurchaseOrderSerializer, VendorSerializer
 
 
 class VendorViewSet(viewsets.ModelViewSet):
@@ -131,6 +139,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     def receive(self, request, pk=None):
         """
         Receive a purchase order into stock.
+
         Expected payload:
         {
             "lines": [
@@ -138,6 +147,13 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 ...
             ]
         }
+
+        Every line goes through `apply_stock_movement()` — the one path that
+        may write stock (README, "Conventions"). The whole receipt is one
+        transaction: if any line is rejected, nothing is booked in.
+
+        The order is only marked RECEIVED once every line is fully received.
+        A partial receipt leaves it DISPATCHED so the rest can still arrive.
         """
         po = self.get_object()
         if po.status != PurchaseOrder.Status.DISPATCHED:
@@ -145,28 +161,48 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 {'detail': f'Cannot receive order in {po.status} status. Must be DISPATCHED.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         lines_data = request.data.get("lines", [])
         if not lines_data:
             return Response({'detail': 'No lines provided to receive.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # DRF turns `ValidationError` into a 400 on its own, so these guards
+        # are raised, not caught-and-returned. The previous `except Exception`
+        # here also swallowed IntegrityError and TypeError and reported them
+        # as 400 with the raw exception text — a 500 disguised as user error.
         try:
             with transaction.atomic():
                 for item in lines_data:
+                    if not isinstance(item, dict):
+                        raise ValidationError("Each entry in `lines` must be an object.")
+
                     try:
-                        line = po.lines.get(id=item.get("line_id"))
+                        line = po.lines.select_for_update().get(id=item.get("line_id"))
                     except PurchaseOrderLine.DoesNotExist:
-                        raise ValidationError(f"Line ID {item.get('line_id')} does not exist on this PO.")
-                    
+                        raise ValidationError(
+                            f"Line ID {item.get('line_id')} does not exist on this PO."
+                        )
+
                     try:
                         rack = Rack.objects.get(id=item.get("rack_id"))
                     except Rack.DoesNotExist:
                         raise ValidationError(f"Rack ID {item.get('rack_id')} does not exist.")
-                    
-                    qty = int(item.get("quantity_received", 0))
+
+                    try:
+                        qty = int(item.get("quantity_received", 0))
+                    except (TypeError, ValueError):
+                        raise ValidationError("`quantity_received` must be an integer.")
+
                     if qty <= 0:
                         raise ValidationError("Quantity received must be positive.")
-                    
+
+                    outstanding = line.quantity_ordered - line.quantity_received
+                    if qty > outstanding:
+                        raise ValidationError(
+                            f"Line {line.pk}: cannot receive {qty}, only {outstanding} "
+                            f"of {line.quantity_ordered} outstanding."
+                        )
+
                     # Call Team B's engine
                     apply_stock_movement(
                         book=line.book,
@@ -177,17 +213,31 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                         vendor=po.vendor,
                         purchase_order=po,
                     )
-                    
-                    line.quantity_received += qty
-                    line.save(update_fields=['quantity_received'])
-                
-                po.status = PurchaseOrder.Status.RECEIVED
-                po.received_at = timezone.now()
-                po.save(update_fields=['status', 'received_at'])
-        except Exception as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+                    # F() rather than read-modify-write: two receipts landing
+                    # at once would otherwise lose one of the increments.
+                    PurchaseOrderLine.objects.filter(pk=line.pk).update(
+                        quantity_received=F("quantity_received") + qty,
+                    )
+
+                fully_received = not po.lines.filter(
+                    quantity_received__lt=F("quantity_ordered"),
+                ).exists()
+
+                if fully_received:
+                    po.status = PurchaseOrder.Status.RECEIVED
+                    po.received_at = timezone.now()
+                    po.save(update_fields=['status', 'received_at'])
+        except InsufficientStockError as exc:
+            # Cannot arise on an inbound movement today, but the engine owes
+            # its callers a translation rather than a 500 if that changes.
+            raise ValidationError(str(exc)) from exc
+
+        po.refresh_from_db()
         return Response(
-            {'detail': f'Purchase Order {po.pk} received successfully'},
+            {
+                'detail': f'Purchase Order {po.pk} received successfully',
+                'status': po.status,
+            },
             status=status.HTTP_200_OK
         )

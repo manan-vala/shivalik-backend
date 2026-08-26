@@ -15,10 +15,9 @@ rather than two. `code` is optional-but-unique: existing rows predate it and
 have none, so a plain ``unique=True`` would collide on the empty string across
 every one of them. The partial constraints below exempt ``""`` instead.
 """
-
 from django.conf import settings
 from django.db import models
-from django.db.models import F, IntegerField, OuterRef, Subquery, Sum
+from django.db.models import F, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -175,7 +174,8 @@ class Rack(TimeStampedModel):
                 condition=~models.Q(code=""),
                 name="uniq_rack_code_per_section_when_set",
             ),
-            models.CheckConstraint(condition=models.Q(current_stock__lte=models.F("max_capacity"))
+            models.CheckConstraint(
+                condition=models.Q(current_stock__lte=models.F("max_capacity"))
                 | models.Q(max_capacity=0),
                 name="rack_stock_within_capacity",
             ),
@@ -189,7 +189,6 @@ class Rack(TimeStampedModel):
     def adjust_stock(self, delta: int, actor) -> None:
         """
         Change this rack's stock by ``delta``.
-
         ``delta`` is signed — positive for inbound, negative for outbound.
         Refuses to drop below zero or above ``max_capacity`` by raising DRF's
         ``ValidationError`` — Django's own ``ValidationError`` would surface

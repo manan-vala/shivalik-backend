@@ -1,7 +1,5 @@
 """Serializers for the book catalog. **Owner: Team B.**"""
 
-from typing import Optional
-
 from rest_framework import serializers
 
 from ..models import Book
@@ -80,14 +78,14 @@ class BookSerializer(serializers.ModelSerializer):
     # -- derived fields ----------------------------------------------------
 
     @staticmethod
-    def _related_name(related) -> Optional[str]:
+    def _related_name(related) -> str | None:
         return related.name if related is not None else None
 
-    def get_default_warehouse_name(self, book: Book) -> Optional[str]:
+    def get_default_warehouse_name(self, book: Book) -> str | None:
         return self._related_name(book.default_warehouse)
 
-    def get_default_section_name(self, book: Book) -> Optional[str]:
+    def get_default_section_name(self, book: Book) -> str | None:
         return self._related_name(book.default_section)
 
-    def get_default_rack_name(self, book: Book) -> Optional[str]:
+    def get_default_rack_name(self, book: Book) -> str | None:
         return self._related_name(book.default_rack)
