@@ -72,6 +72,17 @@ class Employee(AbstractBaseUser, PermissionsMixin):
         db_index=True,
         help_text="Drives the permission matrix. Null until an admin assigns one.",
     )
+    requested_role = models.CharField(
+        max_length=50,
+        choices=Role.choices,
+        blank=True,
+        null=True,
+        help_text="The role a self-signup asked for. Carries no permissions — "
+                  "an admin reads it, then assigns `role` deliberately. Kept "
+                  "separate because `role` is what the permission classes "
+                  "gate on, so writing a stranger's own answer into it would "
+                  "let them pick their own privileges.",
+    )
     phone = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     salary = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
@@ -101,6 +112,12 @@ class Employee(AbstractBaseUser, PermissionsMixin):
     )
     approved_at = models.DateTimeField(blank=True, null=True)
 
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Reason for rejecting the employee application.",
+    )
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
@@ -110,12 +127,30 @@ class Employee(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
+    class Meta:
+        # Every list endpoint is paginated project-wide (M-5), and paginating
+        # an unordered queryset lets rows repeat or vanish between pages —
+        # DRF warns about exactly this. `id` is the tiebreaker because `name`
+        # is not unique, so without it the order within a name is undefined.
+        ordering = ['name', 'id']
+
     def __str__(self):
         return self.email
 
     @property
     def is_approved(self) -> bool:
         return self.status == self.Status.APPROVED
+
+
+#: Module-level alias of ``Employee.Role.choices``.
+#:
+#: `role` and `requested_role` share this one choice set, so drf-spectacular
+#: would emit two identically-shaped enums and warn about it. Collapsing them
+#: needs an ``ENUM_NAME_OVERRIDES`` entry, and that setting resolves its value
+#: with ``import_string``, which cannot traverse into a nested class —
+#: ``...Employee.Role.choices`` fails to load. Hence this alias.
+#: ``Employee.Role`` remains the canonical definition.
+ROLE_CHOICES = Employee.Role.choices
 
 
 class WhitelistedIP(models.Model):

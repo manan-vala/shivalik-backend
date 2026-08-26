@@ -12,8 +12,10 @@ Sprint 0 decisions encoded here — see ``context/06-open-questions.md``:
   ``select_for_update()`` is a silent no-op there (finding ``H-2``) and every
   concurrency guarantee in the stock ledger becomes fiction.
 * **`C-1` — the API is closed by default.** ``DEFAULT_PERMISSION_CLASSES`` is
-  ``IsAuthenticated``; the three public routes (``login/``, ``token/refresh/``,
-  ``health/``) opt out explicitly at the view.
+  ``IsAuthenticated``; the four public routes (``login/``, ``token/refresh/``,
+  ``health/``, ``register/``) opt out explicitly at the view. ``register/``
+  is safe to open because its serializer cannot set anything that confers
+  access — a signup lands ``Pending`` and inactive.
 * **`C-2` — no committed secrets.** ``SECRET_KEY``, ``DEBUG``, hosts and DB
   credentials all come from the environment.
 * **`H-6` — CORS middleware sits directly below `SecurityMiddleware`**, above
@@ -202,6 +204,15 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    # `Employee.role` and `Employee.requested_role` share one choice set, so
+    # spectacular sees the same enum under two names and warns. They are the
+    # same enum on purpose — one is the role an admin assigned, the other the
+    # role the applicant asked for — so collapse them to a single component
+    # rather than letting the generator invent `RoleEnum` / `RequestedRoleEnum`
+    # and hand the frontend two identical types.
+    "ENUM_NAME_OVERRIDES": {
+        "RoleEnum": "staff_auth.models.ROLE_CHOICES",
+    },
 }
 
 
