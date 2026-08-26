@@ -20,7 +20,8 @@ import inspect
 
 import pytest
 from django.db import connection, transaction
-from django.test import SimpleTestCase, TransactionTestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
+from rest_framework.exceptions import ValidationError
 
 from inventory.models import (
     BookInventory,
@@ -30,12 +31,14 @@ from inventory.models import (
     InsufficientStockError,
     MovementType,
     Rack,
+    Section,
+    Warehouse,
     apply_stock_movement,
     signed_delta,
 )
 
 
-class RackAdjustStockContractTests(SimpleTestCase):
+class RackAdjustStockContractTests(TestCase):
     def test_signature_is_exactly_what_team_b_calls(self):
         signature = inspect.signature(Rack.adjust_stock)
         self.assertEqual(list(signature.parameters), ["self", "delta", "actor"])
