@@ -1,5 +1,5 @@
 """
-Sprint 0's headline claim: the API is closed by default (finding `C-1`).
+The headline claim: the API is closed by default.
 
 Before this, every inventory route — including `stock-in`, `stock-out` and
 vendor deletion — answered anonymous callers. These tests are what stops that
@@ -34,7 +34,7 @@ class PublicRouteTests(TestCase):
 
 
 class DefaultPermissionTests(TestCase):
-    """C-1: anything not explicitly opened is closed."""
+    """Anything not explicitly opened is closed."""
 
     def setUp(self):
         self.client = APIClient()
@@ -69,7 +69,7 @@ class DefaultPermissionTests(TestCase):
 
 
 class PaginationTests(TestCase):
-    """M-5: list endpoints are paginated project-wide, not per view."""
+    """List endpoints are paginated project-wide, not per view."""
 
     def setUp(self):
         self.client = APIClient()
@@ -91,7 +91,7 @@ class PaginationTests(TestCase):
 
 
 class SchemaEndpointTests(TestCase):
-    """L-6: the frontend gets a real contract to build against."""
+    """The frontend gets a real contract to build against."""
 
     def test_openapi_schema_is_served(self):
         response = self.client.get(reverse("schema"))

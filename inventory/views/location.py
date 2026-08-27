@@ -22,7 +22,7 @@ class WarehouseViewSet(viewsets.ModelViewSet):
         .order_by("name")
     )
     serializer_class = WarehouseSerializer
-    # TODO(Team D, Task 2): tighten to the agreed role once the matrix exists.
+    # TODO: tighten to the agreed role once the permission matrix exists.
     permission_classes = [IsAuthenticated, IsApprovedStaff]
 
 

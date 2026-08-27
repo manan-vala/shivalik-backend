@@ -3,7 +3,7 @@ from django.apps import AppConfig
 
 class ApiConfig(AppConfig):
     """
-    Home for cross-cutting concerns (finding ``L-4``).
+    Home for cross-cutting concerns.
 
     The app owns no models — it holds the health endpoint and the project-wide
     deployment checks, which need an app to be registered from.

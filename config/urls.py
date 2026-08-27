@@ -7,8 +7,8 @@ Route prefixes are fixed by the hand-drawn spec and must not move:
     /api/v1/auth/         staff_auth
     /api/v1/inventory/    inventory (warehouse, catalog, stock, vendor)
 
-``/api/schema/`` and ``/api/docs/`` are added by Sprint 0 so the frontend has a
-real contract to build against (finding ``L-6``).
+``/api/schema/`` and ``/api/docs/`` give the frontend a real contract to
+build against.
 """
 
 from django.conf import settings
@@ -31,6 +31,6 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    # H-3: dev-only media serving so contract/cover uploads are retrievable.
+    # Dev-only media serving so contract/cover uploads are retrievable.
     # Production serves MEDIA_ROOT from the web server, not from Django.
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -43,7 +43,7 @@ class RackAdjustStockContractTests(TestCase):
         signature = inspect.signature(Rack.adjust_stock)
         self.assertEqual(list(signature.parameters), ["self", "delta", "actor"])
 
-    # `test_stub_fails_loudly` lived here until Task 2 landed a real body —
+    # `test_stub_fails_loudly` lived here until a real body landed —
     # see `test_rack_engine.py` for its behaviour tests.
 
 
@@ -80,7 +80,7 @@ class ApplyStockMovementContractTests(SimpleTestCase):
         }
         self.assertEqual(defaults, {"vendor": None, "purchase_order": None, "reason": ""})
 
-    # `test_stub_fails_loudly` lived here until Team B's Task 2 landed a real
+    # `test_stub_fails_loudly` lived here until Team B landed a real
     # body — this class stays a `SimpleTestCase` (signature-only, no DB), and
     # a real body needs a database, so its behaviour tests moved to
     # `test_stock_engine.py` rather than turning this class into one.
@@ -137,7 +137,7 @@ class InsufficientStockErrorTests(SimpleTestCase):
 @pytest.mark.postgres_only
 class RowLockingTests(TransactionTestCase):
     """
-    The premise the whole engine rests on (Q2 / finding `H-2`).
+    The premise the whole engine rests on.
 
     Skipped on SQLite rather than passed, because there it would pass while
     proving the opposite of what it claims.

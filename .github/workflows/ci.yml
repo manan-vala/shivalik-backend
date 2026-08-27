@@ -9,8 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Q2: the suite runs against real PostgreSQL. On SQLite the concurrency
-    # tests skip themselves and prove nothing (finding H-2).
+    # The suite runs against real PostgreSQL. On SQLite the concurrency
+    # tests skip themselves and prove nothing.
     services:
       db:
         image: postgres:16
@@ -42,8 +42,8 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          # Pinned to the version the team develops on (finding L-3 — two
-          # Django/Python versions have already touched this repo).
+          # Pinned to the version the team develops on — two Django/Python
+          # versions have already touched this repo.
           python-version: "3.14"
           cache: pip
 

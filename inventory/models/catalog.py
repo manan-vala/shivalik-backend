@@ -3,12 +3,12 @@ The book catalog.
 
 **Owner: Team B (Inventory).**
 
-Q4 answered: category is structured as ``class_level`` + ``board`` +
+Category is structured as ``class_level`` + ``board`` +
 ``subject``, not one free-text field — the Figma card renders "CLASS 12 • CBSE"
 as two dimensions, and the persona's pain point is managing stock *across*
 categories, which a typo-prone text field cannot support.
 
-Q5 answered: money is INR, stored as ``Decimal``. Never ``FloatField`` — a
+Money is INR, stored as ``Decimal``. Never ``FloatField`` — a
 binary float cannot represent ₹0.10 exactly and the error compounds across a
 purchase order.
 """
@@ -30,7 +30,7 @@ class Book(TimeStampedModel):
     description = models.TextField(blank=True)
     cover_image = models.ImageField(upload_to="books/covers/", blank=True, null=True)
 
-    # -- category (Q4) -----------------------------------------------------
+    # -- category ----------------------------------------------------------
     class_level = models.CharField(
         max_length=50,
         blank=True,
@@ -45,7 +45,7 @@ class Book(TimeStampedModel):
     )
     subject = models.CharField(max_length=100, blank=True, db_index=True)
 
-    # -- pricing (Q5 — INR) ------------------------------------------------
+    # -- pricing (INR) -----------------------------------------------------
     mrp = models.DecimalField(
         max_digits=10,
         decimal_places=2,

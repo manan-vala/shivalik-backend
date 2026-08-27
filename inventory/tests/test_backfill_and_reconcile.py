@@ -1,5 +1,5 @@
 """
-Team B, Task 7 — the ledger backfill and its reconciliation command.
+The ledger backfill and its reconciliation command.
 
 `apply_stock_movement()` is used to build the "already has real history"
 fixtures below, and plain `.create()`/`.update()` to build the "pre-engine"

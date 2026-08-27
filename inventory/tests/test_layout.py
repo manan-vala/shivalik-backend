@@ -1,10 +1,10 @@
 """
 The package split must be invisible to importers.
 
-`models.py` / `serializers.py` / `views.py` / `admin.py` each became a package
-during Sprint 0. The point of the `__init__` re-exports is that no other module
-had to change; these tests fail if someone drops a name from an `__init__`
-while moving code between team files.
+`models.py` / `serializers.py` / `views.py` / `admin.py` are each a package.
+The point of the `__init__` re-exports is that no other module had to change
+when they were split; these tests fail if someone drops a name from an
+`__init__` while moving code between team files.
 """
 
 from django.apps import apps
@@ -85,7 +85,7 @@ class SerializerAndViewImportSurfaceTests(SimpleTestCase):
         """
         `StockMovementRequestSerializer` (validates a stock-in/out request
         body) and `StockMovementSerializer` (reads the ledger, added for
-        Task 6) share a domain but must never collapse into one class — the
+        share a domain but must never collapse into one class — the
         two used to share a single name, which was the original trap this
         split fixed, and reusing the name for the read side would reopen it.
         """

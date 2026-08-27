@@ -36,14 +36,14 @@ class SchemaTestCase(TestCase):
 
 class BookSchemaTests(SchemaTestCase):
     def test_money_is_decimal_not_float(self):
-        """Q5: a float cannot hold ₹1234.55 exactly, and the error compounds."""
+        """A float cannot hold ₹1234.55 exactly, and the error compounds."""
         self.book.mrp = Decimal("1234.55")
         self.book.save()
         self.book.refresh_from_db()
         self.assertEqual(self.book.mrp, Decimal("1234.55"))
 
     def test_category_is_structured(self):
-        """Q4: the Figma card renders two dimensions, so we store two."""
+        """The design renders two dimensions, so we store two."""
         self.book.class_level = "Class 12"
         self.book.board = "CBSE"
         self.book.subject = "Physics"
@@ -69,7 +69,7 @@ class BookSchemaTests(SchemaTestCase):
 
 class RackCapacityTests(SchemaTestCase):
     def test_capacity_lives_on_rack(self):
-        """Q3: these four fields moved off Section."""
+        """These four fields moved off Section."""
         for field in ("max_capacity", "current_stock", "last_change_date", "updated_by"):
             self.assertIn(field, {f.name for f in Rack._meta.get_fields()})
 
@@ -99,7 +99,7 @@ class RackCapacityTests(SchemaTestCase):
                 )
 
     def test_zero_capacity_means_unmeasured_not_full(self):
-        """Racks predating Q3 have no capacity recorded; they still hold stock."""
+        """Racks predating the capacity move have none recorded; they still hold stock."""
         rack = Rack.objects.create(
             section=self.section, name="A-8", max_capacity=0, current_stock=40,
         )
@@ -165,7 +165,7 @@ class StockMovementSchemaTests(SchemaTestCase):
 class BookInventoryTests(SchemaTestCase):
     def test_vendor_is_optional(self):
         """
-        M-7: vendor is a property of a purchase, not of a shelf. An outbound
+        Vendor is a property of a purchase, not of a shelf. An outbound
         movement has no vendor, and used to be unable to create its row.
         """
         record = BookInventory.objects.create(book=self.book, rack=self.rack)

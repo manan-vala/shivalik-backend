@@ -5,13 +5,13 @@ Stock mutations run through `apply_stock_movement` — the single write path
 documented in `inventory/models/stock.py`. Nothing here does its own
 `BookInventory.objects.update()`.
 
-`H-1` is fixed by construction, not by patching the old check: the
+The stock-out race is fixed by construction, not by patching the old check: the
 sufficiency check that used to run here, before this view opened a
 transaction, now runs *inside* the engine's `select_for_update()` lock. Two
 concurrent stock-outs can no longer both pass a check that is stale by the
 time either of them writes.
 
-Q14 answered: the read surface lives under the top-level `stock/` resource
+The read surface lives under the top-level `stock/` resource
 (`StockViewSet`, below) — `books/inventory/` stays only as a deprecated
 alias. `books/{id}/history|in-entries|out-entries/` stay on `BookViewSet`
 since they are naturally detail routes on a book.
@@ -121,8 +121,8 @@ class BookStockActionsMixin:
         including the derived ``deficit`` and ``rack_location`` fields. This
         is what the frontend inventory table consumes.
 
-        Q14 answered: this route stays as a deprecated alias. The ledger's real
-        home is the top-level ``stock/`` resource built in Task 6.
+        This route stays as a deprecated alias. The ledger's real
+        home is the top-level ``stock/`` resource.
         """
         queryset = (
             BookInventory.objects
@@ -211,7 +211,7 @@ class BookStockActionsMixin:
 
 class StockViewSet(viewsets.GenericViewSet):
     """
-    The top-level ledger read surface (Q14) — everything that used to be
+    The top-level ledger read surface — everything that used to be
     imagined as ``inventory/…`` lives at ``stock/…`` instead, avoiding the
     doubled path ``/api/v1/inventory/inventory/``.
 
@@ -308,7 +308,7 @@ class StockViewSet(viewsets.GenericViewSet):
                 created_by=request.user,
                 notes="Auto-generated from low stock reorder.",
             )
-            # `unit_price` is a DecimalField — Q5, money is never a float. A
+            # `unit_price` is a DecimalField — money is never a float. A
             # book with no MRP is ordered at 0 and priced when the PO is
             # confirmed, rather than being silently dropped from the order.
             PurchaseOrderLine.objects.bulk_create([
@@ -337,7 +337,7 @@ class StockViewSet(viewsets.GenericViewSet):
         the title's `dead_stock_threshold_days` (falling back to
         `settings.DEAD_STOCK_DEFAULT_DAYS`).
 
-        Q9: dead stock is computed on read, never stored. The comparison is
+        Dead stock is computed on read, never stored. The comparison is
         done in SQL — the first cut of this endpoint pulled every
         `BookInventory` row into Python and looped, which does not survive a
         real warehouse's row count and cannot be paginated in the database.

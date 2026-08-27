@@ -13,6 +13,6 @@ from rest_framework.response import Response
     auth=[],
 )
 @api_view(["GET"])
-@permission_classes([AllowAny])  # C-1: one of four deliberate public routes
+@permission_classes([AllowAny])  # one of four deliberate public routes
 def health(request):
     return Response({"status": "success", "message": "Backend running"})

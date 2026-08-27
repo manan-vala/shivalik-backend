@@ -1,4 +1,4 @@
-# Local PostgreSQL, so nobody has to install a server to satisfy Q2.
+# Local PostgreSQL, so nobody has to install a server by hand.
 #
 #   docker compose up -d db      # start
 #   docker compose down          # stop, keeping data

@@ -14,7 +14,7 @@ class WarehouseAdmin(admin.ModelAdmin):
 
 @admin.register(Section)
 class SectionAdmin(admin.ModelAdmin):
-    # Capacity now lives on Rack (Q3); the section totals shown here are
+    # Capacity lives on Rack; the section totals shown here are
     # annotated, so they cannot disagree with the racks underneath.
     list_display = (
         "id",

@@ -1,5 +1,5 @@
 """
-Behaviour tests for `apply_stock_movement` — Team B, Task 2.
+Behaviour tests for `apply_stock_movement`.
 
 `inventory/tests/test_contracts.py` covers the *signature* (keyword-only,
 defaults, "fails loudly"). This file covers what the body actually does, now

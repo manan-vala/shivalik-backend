@@ -22,7 +22,7 @@ router.register("racks", RackViewSet, basename="rack")
 router.register("vendors", VendorViewSet, basename="vendor")
 router.register("purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
 router.register("books", BookViewSet, basename="book")
-# Q14: the ledger's read surface lives at the top level, not nested under
+# The ledger's read surface lives at the top level, not nested under
 # `inventory/` — which would give the doubled path `/inventory/inventory/`.
 router.register("stock", StockViewSet, basename="stock")
 

@@ -42,7 +42,7 @@ class WarehouseSerializer(serializers.ModelSerializer):
 
 class SectionSerializer(serializers.ModelSerializer):
     """
-    Q3: capacity moved to Rack, so a section's totals are annotations rather
+    Capacity lives on Rack, so a section's totals are annotations rather
     than columns. The response keeps the same two keys it always had — the
     numbers are now derived and cannot drift from the racks they describe.
 

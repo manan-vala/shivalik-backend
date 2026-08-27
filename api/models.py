@@ -1,7 +1,7 @@
 """
 The `api` app owns no models.
 
-It is the home for cross-cutting concerns (finding `L-4`): the health probe
+It is the home for cross-cutting concerns: the health probe
 and the project-wide deployment checks in `checks.py`. Domain models live in
 `inventory` and `staff_auth`.
 

@@ -1,8 +1,8 @@
 """
-The endpoints that already existed must still behave after Sprint 0.
+The endpoints that already existed must still behave after the restructure.
 
-The file split, the permission default and the Q3 field move all touched code
-paths that had no test at all (finding `M-8`), so this covers the round trips
+The file split, the permission default and the capacity field move all
+touched code paths that had no test at all, so this covers the round trips
 an operator actually makes.
 """
 
@@ -53,7 +53,8 @@ class InventoryAPITestCase(APITestCase):
 class SectionEndpointTests(InventoryAPITestCase):
     def test_create_returns_the_derived_totals(self):
         """
-        Q3 turned `max_capacity` / `current_stock` into annotations. A newly
+        Moving capacity to Rack turned `max_capacity` / `current_stock` into
+        annotations. A newly
         created Section has never been through `with_rack_totals()`, so the
         serializer must not assume the attribute is there.
         """
@@ -251,7 +252,7 @@ class SectionRackCodeTests(InventoryAPITestCase):
 
 class BookEndpointTests(InventoryAPITestCase):
     def test_register_alias_creates_a_book(self):
-        """L-7: `register/` delegates to `create()` rather than duplicating it."""
+        """`register/` delegates to `create()` rather than duplicating it."""
         response = self.client.post(
             "/api/v1/inventory/books/register/",
             {
@@ -364,8 +365,8 @@ class BookEndpointTests(InventoryAPITestCase):
 
 class StockActionTests(InventoryAPITestCase):
     """
-    The existing stock endpoints, unchanged by Sprint 0 beyond the serializer
-    rename. These are the regression net for Team B's Tasks 2–4.
+    The existing stock endpoints, unchanged beyond the serializer rename.
+    These are the regression net for the movement engine.
     """
 
     def _stock_in(self, quantity):
@@ -482,7 +483,7 @@ class StockActionTests(InventoryAPITestCase):
 @pytest.mark.postgres_only
 class StockOutConcurrencyAPITests(APITransactionTestCase):
     """
-    `H-1`, closed for real: two concurrent HTTP `stock-out` requests for the
+    The stock-out race, closed for real: two concurrent HTTP `stock-out` requests for the
     same book/rack must not both succeed. `APITestCase` (used above) wraps
     each test in a transaction that rolls back, so two "concurrent" requests
     would never actually contend — this needs `APITransactionTestCase`, the

@@ -1,5 +1,5 @@
 """
-Team B, Task 6 — the `stock/` read surface and the book-level movement log.
+The `stock/` read surface and the book-level movement log.
 
 Also covers the correctness note the task doc calls out explicitly: low-stock
 and needs-reorder must aggregate a book's stock across every rack, not
@@ -167,7 +167,7 @@ class MovementLogTests(StockReadsTestCase):
         out_entries = self.client.get(f"/api/v1/inventory/books/{book.pk}/out-entries/")
         self.assertEqual(out_entries.data["count"], 1)
         self.assertEqual(out_entries.data["results"][0]["movement_type"], MovementType.OUT)
-        # Outbound movements carry no vendor (Task 3/4 decision).
+        # Outbound movements carry no vendor.
         self.assertIsNone(out_entries.data["results"][0]["vendor"])
 
     def test_history_is_scoped_to_the_book(self):

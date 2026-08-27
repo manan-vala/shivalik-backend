@@ -23,9 +23,9 @@ from .serializers import (
 
 class EmployeeRegistrationView(generics.CreateAPIView):
     """
-    Self-signup (Task 3, closes `H-5`).
+    Self-signup.
 
-    C-1: one of four deliberately public routes — there is nobody to
+    One of four deliberately public routes — there is nobody to
     authenticate as yet. It is safe to leave open because the serializer
     cannot set anything that confers access: the new employee lands `Pending`
     and inactive, so a successful signup grants no token and no permissions
@@ -38,7 +38,7 @@ class EmployeeRegistrationView(generics.CreateAPIView):
 
 
 class PendingEmployeeListView(generics.ListAPIView):
-    """The admin approval queue (Task 4). Paginated project-wide, like every list."""
+    """The admin approval queue. Paginated project-wide, like every list."""
 
     queryset = Employee.objects.filter(status=Employee.Status.PENDING)
     serializer_class = EmployeeSerializer
@@ -64,7 +64,7 @@ class EmployeeRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
-    # C-1: one of four deliberately public routes. You cannot require a token
+    # One of four deliberately public routes. You cannot require a token
     # from the endpoint that issues tokens.
     permission_classes = [AllowAny]
 
@@ -79,7 +79,7 @@ class EmployeeDetailView(generics.RetrieveAPIView):
 
 class EmployeeApprovalView(generics.UpdateAPIView):
     """
-    Approve or reject a pending employee (Task 4).
+    Approve or reject a pending employee.
 
     Records who approved and when, so an approval is attributable after the
     fact. A rejection must carry a reason — recording a rejection with no
@@ -89,7 +89,7 @@ class EmployeeApprovalView(generics.UpdateAPIView):
 
     queryset = Employee.objects.all()
     serializer_class = EmployeeSerializer
-    permission_classes = [IsAdminUser]  # Task 2 replaces this with IsAdmin
+    permission_classes = [IsAdminUser]  # becomes IsAdmin once roles are enforced
 
     def patch(self, request, *args, **kwargs):
         employee = self.get_object()

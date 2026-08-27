@@ -8,9 +8,10 @@ to make twice:
   `is_superuser` and `role` are all decided by an admin, never by the person
   signing up. `EmployeeRegistrationSerializer` therefore records the role the
   applicant *asked for* in `requested_role`, which no permission class reads.
-* **Passwords are validated, not merely present.** `H-4` was a hardcoded
-  `'password123'` default; requiring a password closes it only if the password
-  has to be worth something, so `AUTH_PASSWORD_VALIDATORS` is run here. Django
+* **Passwords are validated, not merely present.** This path once carried a
+  hardcoded default password; requiring a password replaces it only if the
+  password has to be worth something, so `AUTH_PASSWORD_VALIDATORS` is run
+  here. Django
   applies those validators through forms, and nothing in this API is a form.
 """
 
@@ -79,7 +80,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             'approved_at',
         ]
         extra_kwargs = {
-            # H-4: no default. An admin creating staff directly must choose a
+            # No default. An admin creating staff directly must choose a
             # password; there is no longer a shared one to fall back to.
             'password': {'write_only': True, 'required': True},
             'status': {'read_only': True},

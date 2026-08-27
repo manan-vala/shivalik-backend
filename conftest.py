@@ -5,7 +5,7 @@ Two things live here:
 
 1. `@pytest.mark.postgres_only` skips instead of running. A concurrency test
    on SQLite does not fail — it *passes*, because `select_for_update()` is
-   ignored and the two threads never contend (finding `H-2`). A green tick
+   ignored and the two threads never contend. A green tick
    that proves nothing is worse than a red one, so the marker makes the gap
    visible in the test report::
 
