@@ -4,24 +4,25 @@ Django settings for the Shivalik warehouse backend.
 Everything environment-specific is read from the process environment, seeded
 from a local ``.env`` file (see ``.env.example``). Nothing secret is committed.
 
-Sprint 0 decisions encoded here — see ``context/06-open-questions.md``:
+Decisions encoded here — the reasoning behind each is in
+``ARCHITECTURE.md``:
 
-* **Q2 — PostgreSQL.** ``DB_ENGINE`` defaults to ``postgresql``. SQLite remains
+* **PostgreSQL.** ``DB_ENGINE`` defaults to ``postgresql``. SQLite remains
   reachable via ``DB_ENGINE=sqlite`` for laptops without a local server, but
   ``api.checks`` raises a loud warning when it is in use, because
-  ``select_for_update()`` is a silent no-op there (finding ``H-2``) and every
+  ``select_for_update()`` is a silent no-op there and every
   concurrency guarantee in the stock ledger becomes fiction.
-* **`C-1` — the API is closed by default.** ``DEFAULT_PERMISSION_CLASSES`` is
+* **The API is closed by default.** ``DEFAULT_PERMISSION_CLASSES`` is
   ``IsAuthenticated``; the four public routes (``login/``, ``token/refresh/``,
   ``health/``, ``register/``) opt out explicitly at the view. ``register/``
   is safe to open because its serializer cannot set anything that confers
   access — a signup lands ``Pending`` and inactive.
-* **`C-2` — no committed secrets.** ``SECRET_KEY``, ``DEBUG``, hosts and DB
+* **No committed secrets.** ``SECRET_KEY``, ``DEBUG``, hosts and DB
   credentials all come from the environment.
-* **`H-6` — CORS middleware sits directly below `SecurityMiddleware`**, above
+* **CORS middleware sits directly below `SecurityMiddleware`**, above
   anything that can generate a response.
-* **`H-3` — media is configured**, so ``Employee.contract`` uploads can work.
-* **`M-5`/`M-6` — pagination and filtering are project-wide**, not per view.
+* **Media is configured**, so ``Employee.contract`` uploads can work.
+* **Pagination and filtering are project-wide**, not per view.
 """
 
 from pathlib import Path
@@ -106,7 +107,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    # H-6: must sit above anything that can short-circuit a response
+    # Must sit above anything that can short-circuit a response
     # (CommonMiddleware redirects, error paths) or those responses lose their
     # CORS headers and fail in the browser for reasons that are painful to
     # diagnose.
@@ -136,7 +137,7 @@ TEMPLATES = [
 
 
 # ---------------------------------------------------------------------------
-# Database — Q2: PostgreSQL
+# Database — PostgreSQL
 # ---------------------------------------------------------------------------
 
 DB_ENGINE = env("DB_ENGINE", default="postgresql").lower()
@@ -181,7 +182,7 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    # C-1: closed by default. Public routes opt out with an explicit
+    # Closed by default. Public routes opt out with an explicit
     # `permission_classes = [AllowAny]`, which is greppable in review.
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": (
@@ -245,7 +246,7 @@ USE_TZ = True
 
 
 # ---------------------------------------------------------------------------
-# Static & media — H-3
+# Static & media
 # ---------------------------------------------------------------------------
 
 STATIC_URL = "static/"
@@ -259,11 +260,11 @@ MEDIA_ROOT = BASE_DIR / env("MEDIA_DIRNAME", default="media")
 # Domain constants
 # ---------------------------------------------------------------------------
 
-# Q5 — money is INR everywhere. Stored as Decimal, never float.
+# Money is INR everywhere. Stored as Decimal, never float.
 DEFAULT_CURRENCY = "INR"
 
-# Q10 — role-based permission classes are published as stubs (Team D, Task 0)
-# and allow any authenticated caller until the permission matrix exists.
+# Role-based permission classes are published as stubs and allow any
+# authenticated caller until the permission matrix exists.
 # Turning this on without filling in `allowed_roles` denies everyone.
 ENFORCE_ROLE_PERMISSIONS = env_bool("ENFORCE_ROLE_PERMISSIONS", default=False)
 
@@ -275,6 +276,6 @@ ENFORCE_ROLE_PERMISSIONS = env_bool("ENFORCE_ROLE_PERMISSIONS", default=False)
 # DEBUG: off while developing, on the moment DEBUG is.
 ENFORCE_IP_ALLOWLIST = env_bool("ENFORCE_IP_ALLOWLIST", default=not DEBUG)
 
-# Q9 — dead stock is computed on read, not persisted. Per-book overrides live
+# Dead stock is computed on read, not persisted. Per-book overrides live
 # on `Book.dead_stock_threshold_days`; this is the fallback.
 DEAD_STOCK_DEFAULT_DAYS = env_int("DEAD_STOCK_DEFAULT_DAYS", default=90)

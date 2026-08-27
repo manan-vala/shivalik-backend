@@ -1,5 +1,5 @@
 """
-The Q3 data migration, exercised against real rows.
+The capacity-to-Rack data migration, exercised against real rows.
 
 Every other test in this package runs against a database built by migrating a
 schema onto *nothing*, which proves the migrations apply but says nothing

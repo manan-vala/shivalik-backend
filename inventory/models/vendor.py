@@ -3,11 +3,11 @@ Suppliers and purchase orders.
 
 **Owner: Team C (Vendor).**
 
-Q8 answered: a purchase order is a **header plus lines**. The ERD's
+A purchase order is a **header plus lines**. The ERD's
 ``PurchaseOrder(book_id, vendor_id)`` sketches the relationship, not the
 document — one PO per title is not how any warehouse orders.
 
-Q6 (how to store ``categories_supplied``) is Team C's alone. It is landed here
+How to store ``categories_supplied`` is Team C's call. It is landed here
 as a ``JSONField`` so the Day-3 schema is complete; swapping it for a Postgres
 ``ArrayField`` is a one-line migration if Team C prefers that.
 """

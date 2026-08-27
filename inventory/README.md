@@ -36,13 +36,13 @@ Every model inherits `TimeStampedModel` (adds `created_at`, `updated_at`).
 | Model | Notable fields | Notes |
 |---|---|---|
 | `Warehouse` | `name` (unique) | |
-| `Section` | `warehouse`, `name` | Unique per `(warehouse, name)`. **Capacity is not stored here** (Q3) — `max_capacity` / `current_stock` are annotated from its racks by `Section.objects.with_rack_totals()`. |
+| `Section` | `warehouse`, `name` | Unique per `(warehouse, name)`. **Capacity is not stored here** — `max_capacity` / `current_stock` are annotated from its racks by `Section.objects.with_rack_totals()`. |
 | `Rack` | `section`, `name`, `max_capacity`, `current_stock`, `last_change_date`, `last_used`, `updated_by` | Unique per `(section, name)`. Stock fields are written only by `adjust_stock()`. `max_capacity = 0` means "unmeasured" and exempts the rack from the capacity constraint. |
 | `Vendor` | `company_name`, `vendor_name`, `gst_number` (unique), `contact_person`, `phone`, `email`, `address`, `categories_supplied`, `is_blocked`, … | Blocked vendors are rejected by stock actions. |
-| `Book` | `title`, `isbn` (unique), `author`, `class_level` + `board` + `subject` (Q4), `mrp` / `tax_percent` / `default_discount_percent` (INR `Decimal`, Q5), `default_*` location, `min_stock`, `low_selling` | `low_selling` is written by a future analytics job, not by the API. |
+| `Book` | `title`, `isbn` (unique), `author`, `class_level` + `board` + `subject`, `mrp` / `tax_percent` / `default_discount_percent` (INR `Decimal`), `default_*` location, `min_stock`, `low_selling` | `low_selling` is written by a future analytics job, not by the API. |
 | `BookInventory` | `book`, `rack`, `vendor` (nullable), `in_entry`, `out_entry`, `curr_stock`, `last_out_at` | **Unique per `(book, rack)`** — one canonical ledger row per shelf location. |
-| `StockMovement` | `book`, `rack`, `movement_type`, `quantity`, `balance_after`, `actor`, `reason`, … | **Append-only** (Q7). Never edited, never deleted; the admin registers it read-only. `quantity` is always positive — direction comes from `movement_type`, which is why adjustments are `ADJUSTMENT_IN` / `ADJUSTMENT_OUT`. |
-| `PurchaseOrder` / `PurchaseOrderLine` | header + lines (Q8) | `DRAFT → PLACED → DISPATCHED → RECEIVED`, plus `CANCELLED`. |
+| `StockMovement` | `book`, `rack`, `movement_type`, `quantity`, `balance_after`, `actor`, `reason`, … | **Append-only**. Never edited, never deleted; the admin registers it read-only. `quantity` is always positive — direction comes from `movement_type`, which is why adjustments are `ADJUSTMENT_IN` / `ADJUSTMENT_OUT`. |
+| `PurchaseOrder` / `PurchaseOrderLine` | header + lines | `DRAFT → PLACED → DISPATCHED → RECEIVED`, plus `CANCELLED`. |
 
 Derived values (`deficit`, `needs_reorder`, `rack_location`) live in
 `BookInventorySerializer` — kept out of the DB so business rules can move
@@ -84,7 +84,7 @@ Base URL: `/api/v1/inventory/`
 | GET | `books/{id}/in-entries/` | Same, filtered to `INBOUND_TYPES`. |
 | GET | `books/{id}/out-entries/` | Same, filtered to `OUTBOUND_TYPES`. |
 
-### Stock — the top-level ledger read surface (Q14)
+### Stock — the top-level ledger read surface
 
 | Method | URL | Purpose |
 |---|---|---|
@@ -137,22 +137,22 @@ All three are paginated and permissioned the same as everything else
   path runs no serializer at all.
 * **Concurrency — guaranteed, on PostgreSQL.** `apply_stock_movement()` locks
   the `BookInventory` row with `select_for_update()` and re-checks
-  sufficiency under that lock (finding `H-1`, closed); `Rack.adjust_stock()`
+  sufficiency under that lock; `Rack.adjust_stock()`
   separately locks the rack, because two movements of *different books* onto
   one rack are not serialised by the first lock. Both are covered by
   `@pytest.mark.postgres_only` concurrency tests, including the insert race
   for two concurrent *first* movements of the same `(book, rack)`.
   `select_for_update()` is a silent no-op unless `DB_ENGINE=postgresql`
-  (finding `H-2`) — `manage.py check` warns when it is not, and those tests
+  — `manage.py check` warns when it is not, and those tests
   skip rather than pass vacuously.
 * **Timestamps** — `Rack.adjust_stock()` stamps `last_change_date`,
-  `last_used` and `updated_by` on every movement (finding `M-1`, closed), and
+  `last_used` and `updated_by` on every movement, and
   the engine stamps `BookInventory.last_out_at` on outbound movements. Both
   are single-writer by design.
 * **Vendor attribution** — authoritative on `StockMovement` and
   `PurchaseOrder`. `BookInventory.vendor` is a convenience "last supplier
   seen": written only by an inbound movement that names one, never cleared by
-  an unattributed receipt, never touched on stock-out (finding `M-7`).
+  an unattributed receipt, never touched on stock-out.
 * **Deficit / reorder flag — aggregated per book, not per row.** A title with
   `min_stock = 10` split 4/4/4 across three racks holds 12 and is healthy,
   even though each individual row looks low on its own. `deficit` /
@@ -174,7 +174,7 @@ Backend uses conda env `main` (see project convention).
 conda activate main
 pip install -r requirements-dev.txt
 copy .env.example .env          :: then fill in DJANGO_SECRET_KEY
-docker compose up -d db         :: PostgreSQL, per Q2
+docker compose up -d db         :: PostgreSQL
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
@@ -260,21 +260,21 @@ compensating `ADJUSTMENT_IN`/`ADJUSTMENT_OUT` movement through the engine.
 
 ## Built, but not yet wired up
 
-Sprint 0 landed the whole schema in one migration so four teams would not
-generate conflicting ones. Several models therefore exist with no endpoints
-behind them yet — that is deliberate, not an oversight:
+The whole schema landed in one migration so four teams would not generate
+conflicting ones. Several models therefore exist with no endpoints behind
+them yet — that is deliberate, not an oversight:
 
 * ~~`StockMovement` engine~~ and ~~`Rack.adjust_stock()`~~ — **both landed.**
   Every movement now writes a `StockMovement` row (with `balance_after`) and
   stamps the rack. `models/stock.py` and `models/location.py` carry the
   details.
 * `PurchaseOrder` / `PurchaseOrderLine` — no serializers or routes yet.
-  **Team C, Tasks 4–6.** The engine they depend on is live, so
-  `receive/` no longer needs an `xfail`.
+  Owned by Team C. The engine they depend on is live, so `receive/` no
+  longer needs an `xfail`.
 * ~~The new `Book` fields are in the database but not in the serializer~~ —
   **`BookSerializer` now exposes all of them.** `Vendor` is still the
-  original five; **Team C, Task 1.**
-* `staff_auth.permissions` classes are permissive stubs. **Team D, Task 2.**
+  original five; owned by Team C.
+* `staff_auth.permissions` classes are permissive stubs. Owned by Team D.
 * ~~No backfill of `StockMovement` from pre-engine counters~~ — **done.**
   See *Ledger maintenance* below.
 

@@ -5,7 +5,7 @@ Physical storage hierarchy: Warehouse -> Section -> Rack.
 was the day-1 `Rack.adjust_stock` stub below, written by Team B so their
 movement engine had a real name to call; ownership reverted on merge.
 
-Q3 answered: capacity lives on **Rack**. A Section's capacity and stock are
+Capacity lives on **Rack**. A Section's capacity and stock are
 totals of its racks, annotated on read (`Section.objects.with_rack_totals()`)
 rather than stored — a stored copy is a second source of truth that drifts.
 
@@ -202,7 +202,7 @@ class Rack(TimeStampedModel):
         already locked the ``BookInventory`` row, but two movements against
         the same rack can come from two different books, so that lock does
         not serialise them — this is the same check-then-update race as
-        ``H-1``, one level down, for the same reason: without it, two
+        the stock-out race, one level down, for the same reason: without it, two
         concurrent movements could each read a ``current_stock`` that is
         individually within bounds, then both write, landing the real total
         outside them. Locking here is safe — never opens a transaction of its

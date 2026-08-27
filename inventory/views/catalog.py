@@ -39,7 +39,7 @@ class BookViewSet(BookStockActionsMixin, viewsets.ModelViewSet):
         """
         Explicit alias for POST /books/ — kept because the spec lists it.
 
-        Delegates to `create()` rather than reimplementing it (finding `L-7`),
+        Delegates to `create()` rather than reimplementing it,
         so any future `perform_create` logic applies to both routes. `create()`
         already returns 201 with the Location header.
         """

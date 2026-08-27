@@ -1,10 +1,10 @@
 """
-Team D's day-1 output: the role enum (Q10) and the permission-class stubs.
+Team D's day-1 output: the role enum and the permission-class stubs.
 
 The stubs allow everyone through today. What is tested here is that the real
-logic *behind* them is correct, so Task 2 is only a matter of filling in
-`allowed_roles` and flipping `ENFORCE_ROLE_PERMISSIONS` — not of writing and
-debugging the check itself under time pressure.
+logic *behind* them is correct, so turning them on is only a matter of
+filling in `allowed_roles` and flipping `ENFORCE_ROLE_PERMISSIONS` — not of
+writing and debugging the check itself under time pressure.
 """
 
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
@@ -60,7 +60,7 @@ class RoleEnumTests(TestCase):
 
 
 class PermissionStubTests(SimpleTestCase):
-    """Task 0 behaviour: published, importable, and permissive for now."""
+    """Stub behaviour: published, importable, and permissive for now."""
 
     def setUp(self):
         self.request = RequestFactory().get("/")
@@ -79,7 +79,7 @@ class PermissionStubTests(SimpleTestCase):
 @override_settings(ENFORCE_ROLE_PERMISSIONS=True)
 class PermissionLogicTests(TestCase):
     """
-    Task 2 behaviour, tested ahead of the switch being flipped.
+    Enforced behaviour, tested ahead of the switch being flipped.
 
     Every check answers two questions: is this person approved, and is their
     role allowed here.
@@ -160,7 +160,7 @@ class PermissionLogicTests(TestCase):
 
     def test_empty_allowed_roles_denies_everyone(self):
         """
-        Fail closed: a class Task 2 forgot to fill in must block, not admit.
+        Fail closed: a class nobody filled in must block, not admit.
         """
         class Unconfigured(RoleBasedPermission):
             pass
@@ -251,7 +251,7 @@ class LoginIPAllowlistTests(TestCase):
 
 class SelfSignupTests(TestCase):
     """
-    Task 3 — `POST /register/`, the one public write path.
+    `POST /register/`, the one public write path.
 
     The threat these cover is the one the task file names outright: "a
     serializer that blindly accepts request fields is how someone makes
@@ -353,7 +353,7 @@ class SelfSignupTests(TestCase):
         self.assertEqual(user.registered_ip, "203.0.113.7")
 
     def test_missing_password_is_rejected(self):
-        """H-4: there is no longer a shared default to fall back to."""
+        """There is no longer a shared default password to fall back to."""
         response = self.client.post(self.register_url, {
             "email": "fail@shivalik.test",
             "name": "Fail",
@@ -363,7 +363,7 @@ class SelfSignupTests(TestCase):
 
     def test_weak_password_is_rejected(self):
         """
-        Requiring a password only closes H-4 if the password is worth
+        Requiring a password only helps if the password is worth
         something. Django's validators are configured but are never reached
         from a serializer unless called explicitly.
         """
@@ -376,7 +376,7 @@ class SelfSignupTests(TestCase):
 
 
 class ApprovalQueueTests(TestCase):
-    """Task 4 — the approval queue, and what an approval records."""
+    """The approval queue, and what an approval records."""
 
     PASSWORD = "quiet-harbour-8261"
 
@@ -399,7 +399,7 @@ class ApprovalQueueTests(TestCase):
     def test_pending_list_returns_only_pending_employees(self):
         response = self.client.get(reverse("employee-pending-list"))
         self.assertEqual(response.status_code, 200)
-        # List responses are paginated project-wide (M-5), so the rows sit
+        # List responses are paginated project-wide, so the rows sit
         # under `results` — iterating `response.data` walks the envelope keys.
         emails = [item["email"] for item in response.data["results"]]
         self.assertIn(self.pending_user.email, emails)

@@ -1,20 +1,18 @@
 """
-Team B, Task 7 — the reconciliation command the playbook (§5.4) and the task
-file both ask for: recompute every stored stock number from the ledger that
-is supposed to explain it, and report where they disagree.
+The reconciliation command: recompute every stored stock number from the
+ledger that is supposed to explain it, and report where they disagree.
 
 Two independent checks, because there are two stored aggregates in the
 schema and each can drift from its own source of truth for a different
 reason:
 
 * `BookInventory.curr_stock` should equal the signed sum of that
-  `(book, rack)`'s `StockMovement` rows — this is what proves the Task 7
-  backfill actually worked, and what would catch a bug in
-  `apply_stock_movement()` itself.
+  `(book, rack)`'s `StockMovement` rows — this is what proves the backfill
+  actually worked, and what would catch a bug in `apply_stock_movement()`
+  itself.
 * `Rack.current_stock` should equal `Sum(BookInventory.curr_stock)` across
-  that rack — this is the other stored aggregate `05-implementation-
-  playbook.md` §5.4 flags, and what would catch a bug in `Rack.adjust_stock()`
-  specifically, one level up from the first check.
+  that rack — the other stored aggregate, and what would catch a bug in
+  `Rack.adjust_stock()` specifically, one level up from the first check.
 
 Reports only — it does not fix anything. Auto-correcting a stock number
 outside `apply_stock_movement()` is exactly the "second writer" this whole

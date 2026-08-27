@@ -1,5 +1,5 @@
 """
-Q3: capacity moves from Section down to Rack.
+Capacity moves from Section down to Rack.
 
 0002 added the four fields to `Rack` and left `Section`'s originals in place.
 This migration carries the data down and then drops them, so the columns are
@@ -13,7 +13,7 @@ Two different rules, because the two values mean different things:
 * **current_stock** is *not* divided — it is recomputed from the ledger
   (`BookInventory.curr_stock` summed per rack), which is where the real
   per-rack quantities have been all along. `Section.current_stock` was never
-  written by any code (finding `M-3`) and is 0 everywhere, so copying it would
+  written by any code and is 0 everywhere, so copying it would
   propagate a known-wrong number into the field the whole warehouse module is
   about to depend on.
 """

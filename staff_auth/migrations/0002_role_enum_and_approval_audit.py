@@ -1,5 +1,5 @@
 """
-Q10: `Employee.role` becomes a fixed enum, plus the approval audit trail.
+`Employee.role` becomes a fixed enum, plus the approval audit trail.
 
 `role` was an unconstrained CharField, so whatever anyone typed is in the
 column. Choices are not a database constraint, which means the AlterField

@@ -10,12 +10,12 @@ makes it safe to merge.
 Each test guards something that has already gone wrong once, or that the
 whole system rests on:
 
-1. The API is closed by default            (`C-1` — was open to anonymous)
+1. The API is closed by default            (was once open to anonymous)
 2. Stock moves only through the engine     (the project's non-negotiable rule)
-3. Overselling is a 400, not a 500         (`H-1` — the TOCTOU race)
-4. The ledger reconciles                   (Task 7 — counters vs the log)
+3. Overselling is a 400, not a 500         (the TOCTOU race)
+4. The ledger reconciles                   (counters vs the log)
 5. The core read surface answers           (routes wired, serializers sane)
-6. The OpenAPI contract still generates    (`L-6` — the published API shape)
+6. The OpenAPI contract still generates    (the published API shape)
 
 Run just these with `pytest -m smoke`.
 
@@ -75,7 +75,7 @@ class SmokeTests(APITestCase):
     # 1 -------------------------------------------------------------------
     def test_api_is_closed_to_anonymous_callers(self):
         """
-        `C-1`: the entire warehouse API was once readable and writable
+        The entire warehouse API was once readable and writable
         without a token.
 
         Two independent layers hold this shut — `DEFAULT_PERMISSION_CLASSES`
@@ -114,7 +114,7 @@ class SmokeTests(APITestCase):
         self.assertEqual(record.curr_stock, 10)          # ledger balance
         self.assertEqual(record.in_entry, 10)            # lifetime counter
         self.assertEqual(self.rack.current_stock, 10)    # rack aggregate
-        self.assertIsNotNone(self.rack.last_used)        # `M-1`
+        self.assertIsNotNone(self.rack.last_used)
         self.assertEqual(movement.quantity, 10)          # the log itself
         self.assertEqual(movement.balance_after, 10)
         self.assertEqual(movement.actor, self.staff)     # audit trail
@@ -122,7 +122,7 @@ class SmokeTests(APITestCase):
     # 3 -------------------------------------------------------------------
     def test_overselling_is_a_400_not_a_500(self):
         """
-        `H-1`. The check must sit inside the engine's row lock; a regression
+        The check must sit inside the engine's row lock; a regression
         here shows up as an `IntegerityError` 500 and a corrupted ledger,
         not as a polite failure.
         """
@@ -190,7 +190,7 @@ class SmokeTests(APITestCase):
     def test_the_openapi_schema_generates_without_warnings(self):
         """
         `/api/schema/` is the machine-readable contract the frontend builds
-        against (`L-6`). A viewset without a resolvable serializer degrades
+        against. A viewset without a resolvable serializer degrades
         it — and that failure is invisible from the outside, because the
         endpoint still answers **200** with a schema that quietly documents
         nothing for the broken route. Only `--fail-on-warn` catches it, so

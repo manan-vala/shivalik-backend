@@ -4,7 +4,7 @@ The stock ledger and the single write path into it.
 **Owner: Team B (Inventory).**
 
 `BookInventory` is the live balance per (book, rack). `StockMovement` — added
-once Q7 was answered — is the append-only record of every individual change,
+— is the append-only record of every individual change,
 of which those balances are a projection.
 
 > 🚨 Nothing writes stock except `apply_stock_movement()`. Not Team A, not
@@ -339,7 +339,7 @@ def apply_stock_movement(*, book, rack, quantity, movement_type, actor,
     the request got wrong: an unknown movement type, a blocked vendor, a
     missing reason on an adjustment or write-off, or a non-positive quantity.
     The sufficiency check runs *inside* the row lock acquired below —
-    check-then-update in one critical section is the whole fix for `H-1`;
+    check-then-update in one critical section is the whole fix for the race;
     checking before the transaction, as the old view code did, is the bug
     this replaces.
 
@@ -347,7 +347,7 @@ def apply_stock_movement(*, book, rack, quantity, movement_type, actor,
     receive calls this function directly with no serializer in front of it.
     Every guard below therefore has to turn a caller's mistake into a 400 —
     the database constraints behind them raise `IntegrityError`, which DRF
-    reports as a 500 (playbook §5.3).
+    reports as a 500.
     """
     if quantity < 1:
         raise ValidationError({"quantity": "Quantity must be at least 1."})

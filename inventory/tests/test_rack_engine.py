@@ -1,10 +1,10 @@
 """
-Behaviour tests for `Rack.adjust_stock()` — Team A, Task 2.
+Behaviour tests for `Rack.adjust_stock()`.
 
 `test_contracts.py` covers the signature. This covers the body: bounds
 checking, the "unmeasured" exemption, timestamp/actor stamping, and the
 same check-then-update race `apply_stock_movement` has to guard against
-(`H-1`), one level down — two movements against the *same* rack can come
+one level down — two movements against the *same* rack can come
 from two different books, so the caller's `BookInventory` lock does not
 serialise them.
 """

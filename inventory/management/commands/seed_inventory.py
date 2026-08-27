@@ -7,7 +7,7 @@ running it twice changes nothing.
 Stock is deliberately *not* written here. `BookInventory` rows are created at
 zero and then filled by `apply_stock_movement()`, the single write path
 documented in `inventory/models/stock.py`. While that engine is still a stub
-(Team B, Task 2) the command seeds catalog, locations and vendors, leaves the
+the command seeds catalog, locations and vendors, leaves the
 balances at zero, and says so. Once the engine lands, the opening balances
 below start applying with no change to this file.
 """
@@ -39,7 +39,7 @@ class Command(BaseCommand):
 
         # 2. Sections
         #
-        # No capacity here: Q3 put capacity on Rack, and Section's
+        # No capacity here: capacity lives on Rack, and Section's
         # `max_capacity` / `current_stock` are annotations from
         # `Section.objects.with_rack_totals()`, not columns.
         sec1, _ = Section.objects.get_or_create(warehouse=wh1, name="Fiction Wing")
@@ -198,7 +198,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(
                     "Seeded catalog, locations and vendors. Stock left at zero: "
-                    "apply_stock_movement() is still a stub (Team B, Task 2). "
+                    "apply_stock_movement() is still a stub. "
                     "Re-run this command once it lands to fill the balances."
                 )
             )

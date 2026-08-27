@@ -1,5 +1,5 @@
 """
-Team B, Task 7 — write existing `BookInventory` balances back into the
+Write existing `BookInventory` balances back into the
 ledger as opening-balance rows.
 
 `StockMovement` starts empty on every environment that had stock before the

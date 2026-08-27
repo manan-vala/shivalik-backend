@@ -1,5 +1,5 @@
 """
-Role-based permission classes — Team D, Task 0.
+Role-based permission classes.
 
 **These are published as stubs.** Every class below currently allows any
 authenticated caller through, because the permission *matrix* (which role may
@@ -13,7 +13,7 @@ Import and apply them anyway, from day one::
         permission_classes = [IsAuthenticated, IsInventoryManager]
 
 Nothing in a consuming view changes when the stubs become real. Two things
-turn them on, and both belong to Task 2:
+turn them on, and both have to land together:
 
 1. Fill in ``allowed_roles`` on each class from the agreed matrix.
 2. Set ``ENFORCE_ROLE_PERMISSIONS=true`` in the environment.
@@ -54,7 +54,7 @@ class RoleBasedPermission(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         if not getattr(settings, "ENFORCE_ROLE_PERMISSIONS", False):
-            # STUB behaviour — Task 0. DEFAULT_PERMISSION_CLASSES still
+            # STUB behaviour. DEFAULT_PERMISSION_CLASSES still
             # requires authentication, so this is not an open door.
             return True
 
@@ -87,7 +87,7 @@ class IsAdmin(RoleBasedPermission):
 
 
 class IsInventoryManager(RoleBasedPermission):
-    # TODO(Task 2): confirm against the agreed matrix.
+    # TODO: confirm against the agreed permission matrix.
     allowed_roles = (Employee.Role.ADMIN, Employee.Role.INVENTORY_MANAGER)
 
 

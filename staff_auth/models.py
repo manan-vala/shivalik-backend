@@ -40,7 +40,7 @@ class Employee(AbstractBaseUser, PermissionsMixin):
 
     class Role(models.TextChoices):
         """
-        Q10 — roles are a fixed enum, seeded from the documented personas.
+        Roles are a fixed enum, seeded from the documented personas.
 
         Stored values are stable identifiers; labels are what the Figma role
         dropdown renders. Adding a role is a migration, which is the point:
@@ -128,7 +128,7 @@ class Employee(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     class Meta:
-        # Every list endpoint is paginated project-wide (M-5), and paginating
+        # Every list endpoint is paginated project-wide, and paginating
         # an unordered queryset lets rows repeat or vanish between pages —
         # DRF warns about exactly this. `id` is the tiebreaker because `name`
         # is not unique, so without it the order within a name is undefined.

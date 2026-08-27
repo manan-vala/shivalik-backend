@@ -23,7 +23,7 @@ class BookSerializer(serializers.ModelSerializer):
     They are `SerializerMethodField`s, not `CharField(source="<fk>.name")`,
     because these FKs are nullable and that combination drops the key from
     the response instead of returning `null` — the trap
-    `05-implementation-playbook.md` §5.3 documents. `default=None` is *not*
+    `ARCHITECTURE.md` documents. `default=None` is *not*
     a sufficient fix: DRF's `get_default()` raises `SkipField` whenever
     `partial=True`, so the fields survive GET and POST but silently vanish
     from every **PATCH** response, leaving the same endpoint answering with
