@@ -5,6 +5,7 @@ from django.db.models import Count, F, Max, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
+from auditlog.mixins import AuditLogMixin
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -24,7 +25,7 @@ from ..models import (
 from ..serializers import PurchaseOrderSerializer, VendorSerializer
 
 
-class VendorViewSet(viewsets.ModelViewSet):
+class VendorViewSet(AuditLogMixin, viewsets.ModelViewSet):
     serializer_class = VendorSerializer
     permission_classes = [IsAuthenticated, IsApprovedStaff]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -107,7 +108,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         )
 
 
-class PurchaseOrderViewSet(viewsets.ModelViewSet):
+class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.prefetch_related('lines__book').select_related('vendor', 'created_by').all()
     serializer_class = PurchaseOrderSerializer
     permission_classes = [IsAuthenticated, IsApprovedStaff]
