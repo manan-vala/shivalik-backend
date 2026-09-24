@@ -134,6 +134,27 @@ Set once in settings, not per view. Two consequences:
 - Every model needs `Meta.ordering`. Paginating an unordered queryset lets rows
   repeat or vanish between pages, and Django only warns.
 
+## Two logs, two jobs
+
+**The audit trail** (`auditlog.AuditLog`) records who changed which business
+object and what changed. It is permanent, lives in PostgreSQL, and each row is
+written **in the same transaction as the change**, so a change without an audit
+row, or an audit row without a change, cannot exist. It only records writes, so
+it grows with business volume, not traffic.
+
+Add `AuditLogMixin` to a viewset and create, update and destroy are covered.
+Custom `@action`s skip `perform_*`, so the mixin never sees them. Wrap their
+writes in `with self.audited(AuditLog.Action.X, obj):`. If you leave that out,
+the change is simply not recorded, and nothing warns you.
+
+**The operational log** covers requests, timings, errors and frontend
+telemetry. It is high-volume and disposable, and it **never touches the
+database**. It goes to stdout as one JSON object per line (plain text when
+`DEBUG` is on), plus `LOG_FILE` if set, which logrotate should rotate.
+Every line carries a `request_id`, which is also returned as the `X-Request-ID`
+response header. `POST /api/v1/telemetry/` takes frontend events. It requires a
+login and is throttled, and it writes to the log only.
+
 ---
 
 ## Module ownership

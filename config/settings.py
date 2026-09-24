@@ -107,6 +107,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Outermost, so its timing and request id cover every other middleware.
+    "api.observability.RequestLogMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Must sit above anything that can short-circuit a response
     # (CommonMiddleware redirects, error paths) or those responses lose their
@@ -194,6 +196,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": env_int("API_PAGE_SIZE", default=25),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_RATES": {
+        "telemetry": env("TELEMETRY_THROTTLE_RATE", default="60/min"),
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -283,47 +288,64 @@ DEAD_STOCK_DEFAULT_DAYS = env_int("DEAD_STOCK_DEFAULT_DAYS", default=90)
 
 
 # ---------------------------------------------------------------------------
-# Operational Logging (System Noise)
+# Operational logging
 # ---------------------------------------------------------------------------
-import os
+
+# Requests, errors and frontend telemetry. Never the database: business
+# history is `auditlog`, which is transactional and permanent; this is
+# high-volume and disposable.
+#
+# stdout by default, which is what containers and log shippers expect. Set
+# LOG_FILE to also append JSON lines to a file, and rotate it with logrotate:
+# WatchedFileHandler reopens the file after logrotate moves it. Rotating
+# in-process instead breaks as soon as two processes share the file — every
+# gunicorn worker, or runserver and its autoreloader on Windows.
+LOG_LEVEL = env("LOG_LEVEL", default="INFO").upper()
+LOG_FORMAT = env("LOG_FORMAT", default="text" if DEBUG else "json").lower()
+LOG_FILE = env("LOG_FILE", default="")
+
+if LOG_FORMAT not in ("json", "text"):
+    raise ImproperlyConfigured(f"LOG_FORMAT must be 'json' or 'text', got {LOG_FORMAT!r}.")
+
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {"()": "api.observability.RequestIdFilter"},
+    },
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.json.JsonFormatter",
+            "fmt": "%(levelname)s %(name)s %(message)s %(request_id)s",
+            "rename_fields": {"levelname": "level", "name": "logger"},
+            "timestamp": True,
         },
-        'simple': {
-            'format': '{levelname} {asctime} {message}',
-            'style': '{',
+        "text": {
+            "format": "{asctime} {levelname} {name} [{request_id}] {message}",
+            "style": "{",
         },
     },
-    'handlers': {
-        'console': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-        'file': {
-            'level': 'WARNING',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'system.log'),
-            'maxBytes': 1024 * 1024 * 10, # 10 MB
-            'backupCount': 5, # Keep last 5 files, auto-deletes the rest
-            'formatter': 'verbose',
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": LOG_FORMAT,
+            "filters": ["request_id"],
         },
     },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'django.request': {
-            'handlers': ['file'],
-            'level': 'ERROR',
-            'propagate': False,
-        },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        # Django's defaults attach their own console handler in DEBUG; hand
+        # everything to root instead so each record is written exactly once.
+        "django": {"handlers": [], "level": "INFO", "propagate": True},
     },
 }
+
+if LOG_FILE:
+    LOGGING["handlers"]["file"] = {
+        "class": "logging.handlers.WatchedFileHandler",
+        "filename": LOG_FILE,
+        "formatter": "json",
+        "filters": ["request_id"],
+    }
+    LOGGING["root"]["handlers"].append("file")
