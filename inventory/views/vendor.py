@@ -1,16 +1,16 @@
 """Viewsets for suppliers and purchase orders. **Owner: Team C.**"""
 
-from django.db import transaction
 from django.db.models import Count, F, Max, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
-from auditlog.mixins import AuditLogMixin
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from auditlog.mixins import AuditLogMixin
+from auditlog.models import AuditLog
 from staff_auth.permissions import IsAdmin, IsApprovedStaff
 
 from ..models import (
@@ -77,9 +77,10 @@ class VendorViewSet(AuditLogMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        vendor.is_blocked = True
-        vendor.blocked_at = timezone.now()
-        vendor.save(update_fields=['is_blocked', 'blocked_at'])
+        with self.audited(AuditLog.Action.BLOCK, vendor):
+            vendor.is_blocked = True
+            vendor.blocked_at = timezone.now()
+            vendor.save(update_fields=['is_blocked', 'blocked_at'])
 
         return Response(
             {'detail': f'Vendor {vendor.company_name} has been blocked'},
@@ -98,9 +99,10 @@ class VendorViewSet(AuditLogMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        vendor.is_blocked = False
-        vendor.unblocked_at = timezone.now()
-        vendor.save(update_fields=['is_blocked', 'unblocked_at'])
+        with self.audited(AuditLog.Action.UNBLOCK, vendor):
+            vendor.is_blocked = False
+            vendor.unblocked_at = timezone.now()
+            vendor.save(update_fields=['is_blocked', 'unblocked_at'])
 
         return Response(
             {'detail': f'Vendor {vendor.company_name} has been unblocked'},
@@ -127,10 +129,11 @@ class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        po.status = PurchaseOrder.Status.DISPATCHED
-        po.dispatched_at = timezone.now()
-        po.save(update_fields=['status', 'dispatched_at'])
-        
+        with self.audited(AuditLog.Action.DISPATCH, po):
+            po.status = PurchaseOrder.Status.DISPATCHED
+            po.dispatched_at = timezone.now()
+            po.save(update_fields=['status', 'dispatched_at'])
+
         return Response(
             {'detail': f'Purchase Order {po.pk} dispatched'},
             status=status.HTTP_200_OK
@@ -151,7 +154,8 @@ class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
         Every line goes through `apply_stock_movement()` — the one path that
         may write stock (README, "Conventions"). The whole receipt is one
-        transaction: if any line is rejected, nothing is booked in.
+        transaction, audit row included: if any line is rejected, nothing is
+        booked in and nothing is logged.
 
         The order is only marked RECEIVED once every line is fully received.
         A partial receipt leaves it DISPATCHED so the rest can still arrive.
@@ -171,8 +175,10 @@ class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
         # are raised, not caught-and-returned. The previous `except Exception`
         # here also swallowed IntegrityError and TypeError and reported them
         # as 400 with the raw exception text — a 500 disguised as user error.
+        received = []
         try:
-            with transaction.atomic():
+            with self.audited(AuditLog.Action.RECEIVE, po) as audit_extra:
+                audit_extra["received"] = received
                 for item in lines_data:
                     if not isinstance(item, dict):
                         raise ValidationError("Each entry in `lines` must be an object.")
@@ -219,6 +225,9 @@ class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
                     # at once would otherwise lose one of the increments.
                     PurchaseOrderLine.objects.filter(pk=line.pk).update(
                         quantity_received=F("quantity_received") + qty,
+                    )
+                    received.append(
+                        {"line_id": line.pk, "quantity_received": qty, "rack_id": rack.pk}
                     )
 
                 fully_received = not po.lines.filter(

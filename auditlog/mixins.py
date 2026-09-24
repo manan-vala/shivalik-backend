@@ -1,78 +1,75 @@
+from contextlib import contextmanager
+
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
+
 from .models import AuditLog
+
+
+def diff(before, after):
+    return {
+        key: {"old": before.get(key), "new": after.get(key)}
+        for key in before.keys() | after.keys()
+        if before.get(key) != after.get(key)
+    }
+
+
+def record(actor, action, instance, changes):
+    """Write one audit row. Call it inside the mutation's transaction."""
+    return AuditLog.objects.create(
+        actor=actor if actor is not None and actor.is_authenticated else None,
+        action=action,
+        content_type=ContentType.objects.get_for_model(instance),
+        object_id=str(instance.pk),
+        changes=changes,
+    )
+
 
 class AuditLogMixin:
     """
-    Mixin for DRF ViewSets to automatically log CREATE, UPDATE, and DELETE actions.
-    Attach this to any ModelViewSet to track mutations without writing manual logs.
+    Audits create, update and destroy on a ModelViewSet.
+
+    Custom `@action`s bypass `perform_*`, so wrap their writes in
+    `with self.audited(action, instance):`.
     """
-    def _get_actor(self):
-        request = self.request
-        if request and hasattr(request, 'user') and request.user.is_authenticated:
-            return request.user
-        return None
+
+    def snapshot(self, instance):
+        return self.get_serializer_class()(instance, context=self.get_serializer_context()).data
+
+    def audit(self, action, instance, changes):
+        return record(self.request.user, action, instance, changes)
+
+    @contextmanager
+    def audited(self, action, instance):
+        """
+        Atomically run the block and audit its diff. Yields a dict whose
+        entries are stored alongside the diff.
+        """
+        extra = {}
+        with transaction.atomic():
+            before = self.snapshot(instance)
+            yield extra
+            # Re-read: the block may have written through querysets or F()
+            # expressions that `instance` and its prefetch cache never see.
+            after = self.snapshot(self.get_queryset().get(pk=instance.pk))
+            self.audit(action, instance, {"diff": diff(before, after), **extra})
 
     def perform_create(self, serializer):
-        super().perform_create(serializer)
-        instance = serializer.instance
-        content_type = ContentType.objects.get_for_model(instance)
-        
-        # Record what was created
-        changes = {
-            "after": serializer.data
-        }
-
-        AuditLog.objects.create(
-            actor=self._get_actor(),
-            action=AuditLog.Action.CREATE,
-            content_type=content_type,
-            object_id=str(instance.pk),
-            changes=changes
-        )
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self.audit(AuditLog.Action.CREATE, serializer.instance, {"after": serializer.data})
 
     def perform_update(self, serializer):
-        # 1. Get the 'Before' state directly from the database instance
-        instance = self.get_object()
-        serializer_class = self.get_serializer_class()
-        before_data = serializer_class(instance, context=self.get_serializer_context()).data
-        
-        # 2. Perform the actual update
-        super().perform_update(serializer)
-        
-        # 3. Get the 'After' state
-        after_data = serializer.data
-
-        # 4. Calculate exactly what changed to save database space
-        changed_data = {}
-        for key, value in after_data.items():
-            if before_data.get(key) != value:
-                changed_data[key] = {"old": before_data.get(key), "new": value}
-        
-        # 5. Only save an audit log if fields actually changed
-        if changed_data:
-            content_type = ContentType.objects.get_for_model(instance)
-            AuditLog.objects.create(
-                actor=self._get_actor(),
-                action=AuditLog.Action.UPDATE,
-                content_type=content_type,
-                object_id=str(instance.pk),
-                changes={"diff": changed_data}
-            )
+        with transaction.atomic():
+            before = self.snapshot(serializer.instance)
+            super().perform_update(serializer)
+            changed = diff(before, serializer.data)
+            if changed:
+                self.audit(AuditLog.Action.UPDATE, serializer.instance, {"diff": changed})
 
     def perform_destroy(self, instance):
-        content_type = ContentType.objects.get_for_model(instance)
-        object_id = str(instance.pk)
-        
-        # Record what was deleted just in case we need to restore it
-        serializer_class = self.get_serializer_class()
-        before_data = serializer_class(instance, context=self.get_serializer_context()).data
-
-        super().perform_destroy(instance)
-        
-        AuditLog.objects.create(
-            actor=self._get_actor(),
-            action=AuditLog.Action.DELETE,
-            content_type=content_type,
-            object_id=object_id,
-            changes={"deleted_data": before_data}
-        )
+        with transaction.atomic():
+            # Snapshot and pk first: both are gone once the row is deleted.
+            before = self.snapshot(instance)
+            self.audit(AuditLog.Action.DELETE, instance, {"before": before})
+            super().perform_destroy(instance)
