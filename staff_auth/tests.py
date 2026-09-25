@@ -462,6 +462,9 @@ class ApprovalQueueTests(TestCase):
         )
 
 
+# The logins below are about the password, not the IP allow-list — which
+# defaults to on whenever DEBUG is off, as it is in CI.
+@override_settings(ENFORCE_IP_ALLOWLIST=False)
 class StaffPasswordUpdateTests(TestCase):
     """
     A password sent on update must be hashed. `create()` always hashed, but
