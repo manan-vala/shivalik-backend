@@ -132,6 +132,7 @@ __all__ = [
     "IsMoneyCollector",
     "IsBindingManager",
     "IsPrintingManager",
+    "CanManageStaff",
 ]
 
 
@@ -147,6 +148,11 @@ class CanManageStaff(BasePermission):
 
     Either now qualifies. The role only counts once the employee is
     Approved and active.
+
+    One limit on the role: it cannot touch an `is_staff` account. Otherwise
+    an ADMIN-role employee could reset a superuser's password, or reject
+    them through `approve/`, and so take over or lock out the Django-admin
+    accounts above them. Only `is_staff` may modify `is_staff`.
 
     **Always enforced**, unlike the role stubs above: letting any signed-in
     employee manage staff while `ENFORCE_ROLE_PERMISSIONS` is off would be a
@@ -165,3 +171,8 @@ class CanManageStaff(BasePermission):
             user.status == Employee.Status.APPROVED
             and user.role == Employee.Role.ADMIN
         )
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        if isinstance(obj, Employee) and obj.is_staff:
+            return request.user.is_staff
+        return True

@@ -46,8 +46,12 @@ def exception_handler(exc, context):
         blocking = exc.protected_objects if isinstance(exc, ProtectedError) else exc.restricted_objects
         detail = f"Can't delete this: it still has history ({_describe(blocking)})."
         model = _deleting_model(context)
-        if model is not None and any(f.name == "is_active" for f in model._meta.get_fields()):
+        fields = {f.name for f in model._meta.get_fields()} if model is not None else set()
+        # Point at the model's own retirement path, where it has one.
+        if "is_active" in fields:
             detail += " Deactivate it instead."
+        elif "is_blocked" in fields:
+            detail += " Block it instead."
         return Response({"detail": detail}, status=status.HTTP_409_CONFLICT)
 
     return None

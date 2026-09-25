@@ -66,7 +66,9 @@ cancel them.
 
 Staff management (`staff/`, `staff/pending/`, `approve/`) uses
 `CanManageStaff`: Django's `is_staff` **or** an approved employee with
-`role = ADMIN`. It is always enforced. Don't use DRF's `IsAdminUser` for new
+`role = ADMIN`. It is always enforced, and the role can't modify an
+`is_staff` account — only `is_staff` can, or the role would be a way to take
+over a superuser. Don't use DRF's `IsAdminUser` for new
 routes — it only knows `is_staff` — and don't use the role stubs for anything
 that must stay closed while `ENFORCE_ROLE_PERMISSIONS` is off.
 

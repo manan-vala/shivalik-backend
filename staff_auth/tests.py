@@ -595,3 +595,57 @@ class StaffManagementPermissionTests(TestCase):
         )
         response = self._client_for(manager).get(reverse("employee-list-create"))
         self.assertEqual(response.status_code, 403)
+
+    def test_admin_role_cannot_modify_an_is_staff_account(self):
+        """
+        Otherwise the role is a way up: reset a superuser's password, or
+        reject them, and take over or lock out the Django-admin accounts.
+        """
+        role_admin = self._employee(
+            "roleadmin2@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.APPROVED,
+        )
+        superuser = Employee.objects.create_superuser(
+            email="root@shivalik.test", password=self.PASSWORD, name="Root",
+        )
+        client = self._client_for(role_admin)
+
+        reset = client.patch(
+            reverse("employee-detail-update-destroy", args=[superuser.pk]),
+            {"password": "takeover-attempt-7781"}, format="json",
+        )
+        reject = client.patch(
+            reverse("employee-approve", args=[superuser.pk]),
+            {"status": Employee.Status.REJECTED, "rejection_reason": "x"}, format="json",
+        )
+
+        self.assertEqual(reset.status_code, 403)
+        self.assertEqual(reject.status_code, 403)
+        superuser.refresh_from_db()
+        self.assertTrue(superuser.check_password(self.PASSWORD))
+        self.assertEqual(superuser.status, Employee.Status.APPROVED)
+
+    def test_admin_role_can_still_modify_ordinary_employees(self):
+        role_admin = self._employee(
+            "roleadmin3@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.APPROVED,
+        )
+        colleague = self._employee("colleague@shivalik.test", status=Employee.Status.APPROVED)
+        response = self._client_for(role_admin).patch(
+            reverse("employee-detail-update-destroy", args=[colleague.pk]),
+            {"department": "Dispatch"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_is_staff_can_still_modify_is_staff(self):
+        root = Employee.objects.create_superuser(
+            email="root2@shivalik.test", password=self.PASSWORD, name="Root2",
+        )
+        other = Employee.objects.create_superuser(
+            email="root3@shivalik.test", password=self.PASSWORD, name="Root3",
+        )
+        response = self._client_for(root).patch(
+            reverse("employee-detail-update-destroy", args=[other.pk]),
+            {"department": "Ops"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)

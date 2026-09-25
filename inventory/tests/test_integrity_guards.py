@@ -62,23 +62,25 @@ def stocked(admin):
 # -- protected deletes: 409, not 500 --------------------------------------
 
 @pytest.mark.parametrize(
-    "kind, route, model, suggests_deactivating",
+    "kind, route, model, hint",
     [
-        ("vendor", "inventory:vendor-detail", Vendor, False),
-        ("book", "inventory:book-detail", Book, False),
-        ("rack", "inventory:rack-detail", Rack, True),
-        ("warehouse", "inventory:warehouse-detail", Warehouse, True),
+        ("vendor", "inventory:vendor-detail", Vendor, "Block it instead."),
+        ("book", "inventory:book-detail", Book, None),
+        ("rack", "inventory:rack-detail", Rack, "Deactivate it instead."),
+        ("warehouse", "inventory:warehouse-detail", Warehouse, "Deactivate it instead."),
     ],
 )
-def test_deleting_a_row_with_stock_history_is_a_409(
-    client, stocked, kind, route, model, suggests_deactivating,
-):
+def test_deleting_a_row_with_stock_history_is_a_409(client, stocked, kind, route, model, hint):
     obj = stocked[kind]
     response = client.delete(reverse(route, kwargs={"pk": obj.pk}))
 
     assert response.status_code == 409
-    assert "stock movement" in response.data["detail"]
-    assert ("Deactivate it instead" in response.data["detail"]) is suggests_deactivating
+    detail = response.data["detail"]
+    assert "stock movement" in detail
+    if hint:
+        assert detail.endswith(hint)
+    else:
+        assert "instead" not in detail
     assert model.objects.filter(pk=obj.pk).exists()
 
 
@@ -105,7 +107,9 @@ def test_only_a_draft_purchase_order_can_be_deleted(client, stocked, status, hin
     response = client.delete(reverse("inventory:purchase-order-detail", kwargs={"pk": po.pk}))
 
     assert response.status_code == 400
-    assert ("Cancel it instead" in str(response.data["detail"])) is hint
+    # A plain string, like dispatch/receive's own status refusals.
+    assert isinstance(response.data["detail"], str)
+    assert ("Cancel it instead" in response.data["detail"]) is hint
     assert PurchaseOrder.objects.filter(pk=po.pk).exists()
 
 
