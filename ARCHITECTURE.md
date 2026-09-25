@@ -55,6 +55,21 @@ Currency is INR throughout. `settings.DEFAULT_CURRENCY` records it.
 vendor. `SET_NULL` for people, so an employee leaving does not erase the record
 of what they did.
 
+A delete the database refuses is a **409**, not a 500: `api/exceptions.py`
+translates `ProtectedError` project-wide, so a viewset needs nothing extra.
+Locations are retired with `is_active = False` instead, and a retired rack —
+or one in a retired section or warehouse — takes no new stock (the engine
+refuses it). Purchase orders can only be deleted while DRAFT; after that,
+cancel them.
+
+## Who counts as an admin
+
+Staff management (`staff/`, `staff/pending/`, `approve/`) uses
+`CanManageStaff`: Django's `is_staff` **or** an approved employee with
+`role = ADMIN`. It is always enforced. Don't use DRF's `IsAdminUser` for new
+routes — it only knows `is_staff` — and don't use the role stubs for anything
+that must stay closed while `ENFORCE_ROLE_PERMISSIONS` is off.
+
 ## The user model is `staff_auth.Employee`
 
 Never import `django.contrib.auth.models.User`. Use `settings.AUTH_USER_MODEL`
