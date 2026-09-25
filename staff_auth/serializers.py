@@ -100,6 +100,20 @@ class EmployeeSerializer(serializers.ModelSerializer):
         # Status defaults to 'Pending' on the model.
         return Employee.objects.create_user(password=password, **validated_data)
 
+    def update(self, instance, validated_data):
+        """
+        Hash a changed password. `ModelSerializer.update()` sets every field
+        with `setattr`, so without this a PATCH/PUT carrying `password` stored
+        it as plain text — and, since the column is then not a valid hash, the
+        employee could no longer log in either.
+        """
+        password = validated_data.pop('password', None)
+        instance = super().update(instance, validated_data)
+        if password:
+            instance.set_password(password)
+            instance.save(update_fields=['password'])
+        return instance
+
 
 class EmployeeRegistrationSerializer(serializers.ModelSerializer):
     """

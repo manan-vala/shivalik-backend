@@ -133,3 +133,35 @@ __all__ = [
     "IsBindingManager",
     "IsPrintingManager",
 ]
+
+
+class CanManageStaff(BasePermission):
+    """
+    Who may list, create, edit and approve employees.
+
+    Two things have meant "admin" in this project: Django's `is_staff` flag
+    (what DRF's `IsAdminUser` checks, set only by `createsuperuser` or the
+    Django admin) and `Employee.role == ADMIN` (the app's own role enum).
+    Staff routes used to check only the first, so an approved employee an
+    admin had given the ADMIN role still got 403 on every staff screen.
+
+    Either now qualifies. The role only counts once the employee is
+    Approved and active.
+
+    **Always enforced**, unlike the role stubs above: letting any signed-in
+    employee manage staff while `ENFORCE_ROLE_PERMISSIONS` is off would be a
+    privilege escalation, not a stub.
+    """
+
+    message = "Only an admin can manage staff."
+
+    def has_permission(self, request, view) -> bool:
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or not user.is_active:
+            return False
+        if user.is_staff:
+            return True
+        return (
+            user.status == Employee.Status.APPROVED
+            and user.role == Employee.Role.ADMIN
+        )
