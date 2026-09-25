@@ -376,6 +376,16 @@ def apply_stock_movement(*, book, rack, quantity, movement_type, actor,
     delta = signed_delta(movement_type, quantity)
     is_inbound = delta > 0
 
+    # A retired location takes no new stock. Checked for the whole chain —
+    # deactivating a warehouse doesn't touch its racks' own flags — and only
+    # for inbound movements, so a deactivated rack can still be emptied.
+    if is_inbound:
+        section = rack.section
+        if not (rack.is_active and section.is_active and section.warehouse.is_active):
+            raise ValidationError({
+                "rack": f"{rack} is inactive and can't receive stock.",
+            })
+
     record = _lock_or_create_inventory_row(
         book=book, rack=rack, vendor=vendor if is_inbound else None,
     )

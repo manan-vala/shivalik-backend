@@ -460,3 +460,195 @@ class ApprovalQueueTests(TestCase):
         self.assertEqual(
             anonymous.get(reverse("employee-pending-list")).status_code, 403,
         )
+
+
+# The logins below are about the password, not the IP allow-list — which
+# defaults to on whenever DEBUG is off, as it is in CI.
+@override_settings(ENFORCE_IP_ALLOWLIST=False)
+class StaffPasswordUpdateTests(TestCase):
+    """
+    A password sent on update must be hashed. `create()` always hashed, but
+    `update()` fell through to `ModelSerializer.update()`, which stored the
+    raw string — exposing it, and locking the employee out, since a plain
+    string is not a valid hash.
+    """
+
+    OLD = "amber-lantern-4417"
+    NEW = "cobalt-orchard-9052"
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = Employee.objects.create_superuser(
+            email="pwadmin@shivalik.test", password=self.OLD, name="PW Admin",
+        )
+        self.client.force_authenticate(user=self.admin)
+        self.employee = Employee.objects.create_user(
+            email="pwstaff@shivalik.test", password=self.OLD, name="PW Staff",
+            status=Employee.Status.APPROVED,
+        )
+        self.url = reverse("employee-detail-update-destroy", args=[self.employee.pk])
+
+    def _login(self, password):
+        return APIClient().post(
+            reverse("token_obtain_pair"),
+            {"email": self.employee.email, "password": password},
+            format="json",
+        )
+
+    def test_patched_password_is_hashed_and_logs_in(self):
+        response = self.client.patch(self.url, {"password": self.NEW}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        self.employee.refresh_from_db()
+        self.assertNotEqual(self.employee.password, self.NEW)
+        self.assertTrue(self.employee.check_password(self.NEW))
+        self.assertEqual(self._login(self.NEW).status_code, 200)
+        self.assertEqual(self._login(self.OLD).status_code, 401)
+
+    def test_put_hashes_the_password_too(self):
+        response = self.client.put(
+            self.url,
+            {"email": self.employee.email, "name": "Renamed", "password": self.NEW},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.employee.refresh_from_db()
+        self.assertTrue(self.employee.check_password(self.NEW))
+
+    def test_patch_without_a_password_leaves_it_alone(self):
+        self.client.patch(self.url, {"department": "Dispatch"}, format="json")
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.department, "Dispatch")
+        self.assertTrue(self.employee.check_password(self.OLD))
+
+
+class ApprovalRouteMethodTests(TestCase):
+    """`approve/` is PATCH only. PUT used to edit the employee through the
+    generic `update()`, skipping every approval rule."""
+
+    def test_put_is_not_allowed(self):
+        admin = Employee.objects.create_superuser(
+            email="putadmin@shivalik.test", password="x-harbour-2211", name="A",
+        )
+        target = Employee.objects.create_user(
+            email="putstaff@shivalik.test", password="x-harbour-2211", name="Before",
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.put(
+            reverse("employee-approve", args=[target.pk]),
+            {"email": target.email, "name": "After", "password": "x-harbour-2211"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 405)
+        target.refresh_from_db()
+        self.assertEqual(target.name, "Before")
+
+
+class StaffManagementPermissionTests(TestCase):
+    """
+    Either meaning of "admin" can manage staff — Django's `is_staff`, or an
+    approved employee with `role = ADMIN` — and nobody else, whatever
+    `ENFORCE_ROLE_PERMISSIONS` says.
+    """
+
+    PASSWORD = "slate-meadow-3380"
+
+    def _employee(self, email, **extra):
+        return Employee.objects.create_user(
+            email=email, password=self.PASSWORD, name=email.split("@")[0], **extra,
+        )
+
+    def _client_for(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def test_approved_admin_role_can_manage_staff_without_is_staff(self):
+        role_admin = self._employee(
+            "roleadmin@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.APPROVED,
+        )
+        pending = self._employee("queued@shivalik.test")
+        client = self._client_for(role_admin)
+
+        self.assertFalse(role_admin.is_staff)
+        self.assertEqual(client.get(reverse("employee-list-create")).status_code, 200)
+        response = client.patch(
+            reverse("employee-approve", args=[pending.pk]),
+            {"status": Employee.Status.APPROVED}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_role_counts_only_once_approved(self):
+        unapproved = self._employee(
+            "pendingadmin@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.PENDING,
+        )
+        response = self._client_for(unapproved).get(reverse("employee-list-create"))
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(ENFORCE_ROLE_PERMISSIONS=False)
+    def test_other_roles_are_refused_even_with_role_enforcement_off(self):
+        manager = self._employee(
+            "manager@shivalik.test", role=Employee.Role.INVENTORY_MANAGER,
+            status=Employee.Status.APPROVED,
+        )
+        response = self._client_for(manager).get(reverse("employee-list-create"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_role_cannot_modify_an_is_staff_account(self):
+        """
+        Otherwise the role is a way up: reset a superuser's password, or
+        reject them, and take over or lock out the Django-admin accounts.
+        """
+        role_admin = self._employee(
+            "roleadmin2@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.APPROVED,
+        )
+        superuser = Employee.objects.create_superuser(
+            email="root@shivalik.test", password=self.PASSWORD, name="Root",
+        )
+        client = self._client_for(role_admin)
+
+        reset = client.patch(
+            reverse("employee-detail-update-destroy", args=[superuser.pk]),
+            {"password": "takeover-attempt-7781"}, format="json",
+        )
+        reject = client.patch(
+            reverse("employee-approve", args=[superuser.pk]),
+            {"status": Employee.Status.REJECTED, "rejection_reason": "x"}, format="json",
+        )
+
+        self.assertEqual(reset.status_code, 403)
+        self.assertEqual(reject.status_code, 403)
+        superuser.refresh_from_db()
+        self.assertTrue(superuser.check_password(self.PASSWORD))
+        self.assertEqual(superuser.status, Employee.Status.APPROVED)
+
+    def test_admin_role_can_still_modify_ordinary_employees(self):
+        role_admin = self._employee(
+            "roleadmin3@shivalik.test", role=Employee.Role.ADMIN,
+            status=Employee.Status.APPROVED,
+        )
+        colleague = self._employee("colleague@shivalik.test", status=Employee.Status.APPROVED)
+        response = self._client_for(role_admin).patch(
+            reverse("employee-detail-update-destroy", args=[colleague.pk]),
+            {"department": "Dispatch"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_is_staff_can_still_modify_is_staff(self):
+        root = Employee.objects.create_superuser(
+            email="root2@shivalik.test", password=self.PASSWORD, name="Root2",
+        )
+        other = Employee.objects.create_superuser(
+            email="root3@shivalik.test", password=self.PASSWORD, name="Root3",
+        )
+        response = self._client_for(root).patch(
+            reverse("employee-detail-update-destroy", args=[other.pk]),
+            {"department": "Ops"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)

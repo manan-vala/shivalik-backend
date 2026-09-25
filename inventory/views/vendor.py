@@ -117,6 +117,27 @@ class PurchaseOrderViewSet(AuditLogMixin, viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['vendor', 'status']
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Only a DRAFT may be deleted. Once an order has been placed it is a
+        business document the vendor has seen; from then on the way out is
+        cancellation, which keeps the record. Updates were already guarded
+        by the serializer's transition table; `destroy` had no check at all.
+        Checked before the audit mixin opens its transaction, so a refused
+        delete writes nothing. Answers in the same `{"detail": "..."}` shape
+        as dispatch and receive's status refusals.
+        """
+        po = self.get_object()
+        if po.status != PurchaseOrder.Status.DRAFT:
+            detail = (
+                f"Only a draft purchase order can be deleted; this one is "
+                f"{po.get_status_display().lower()}."
+            )
+            if po.status in (PurchaseOrder.Status.PLACED, PurchaseOrder.Status.DISPATCHED):
+                detail += " Cancel it instead."
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsAdmin], url_path='dispatch')
     def dispatch_po(self, request, pk=None):
         """

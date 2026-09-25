@@ -188,6 +188,9 @@ REST_FRAMEWORK = {
     # Closed by default. Public routes opt out with an explicit
     # `permission_classes = [AllowAny]`, which is greppable in review.
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # DRF's handler, plus: a delete blocked by `on_delete=PROTECT` is a 409
+    # naming what still depends on the row, not a 500.
+    "EXCEPTION_HANDLER": "api.exceptions.exception_handler",
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",

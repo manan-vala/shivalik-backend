@@ -8,12 +8,12 @@ The approval flow is the boundary that matters — a self-signup arrives
 
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import Employee
-from .permissions import IsApprovedStaff
+from .permissions import CanManageStaff, IsApprovedStaff
 from .serializers import (
     CustomTokenObtainPairSerializer,
     EmployeeRegistrationSerializer,
@@ -42,13 +42,13 @@ class PendingEmployeeListView(generics.ListAPIView):
 
     queryset = Employee.objects.filter(status=Employee.Status.PENDING)
     serializer_class = EmployeeSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [CanManageStaff]
 
 
 class EmployeeListCreateView(generics.ListCreateAPIView):
     queryset = Employee.objects.all()
     serializer_class = EmployeeSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [CanManageStaff]
 
 
 class EmployeeRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
@@ -59,7 +59,7 @@ class EmployeeRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 
     queryset = Employee.objects.all()
     serializer_class = EmployeeSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [CanManageStaff]
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -89,7 +89,11 @@ class EmployeeApprovalView(generics.UpdateAPIView):
 
     queryset = Employee.objects.all()
     serializer_class = EmployeeSerializer
-    permission_classes = [IsAdminUser]  # becomes IsAdmin once roles are enforced
+    permission_classes = [CanManageStaff]
+    # PATCH only. `UpdateAPIView` also routes PUT to the generic `update()`,
+    # which edited the employee through `EmployeeSerializer` without running
+    # any of the approval logic below — a second, unguarded staff-edit route.
+    http_method_names = ["patch", "options"]
 
     def patch(self, request, *args, **kwargs):
         employee = self.get_object()
