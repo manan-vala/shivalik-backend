@@ -11,7 +11,13 @@ bite you if you do not know them, and why each one exists.
 
 ## Setup
 
-Requires **Python 3.14** and **Docker** (for PostgreSQL).
+Requires **Python 3.12** and **Docker** (for PostgreSQL).
+
+The backend is pinned to **Django 5.0.14**, which supports Python 3.10–3.12
+only — a 3.13 or 3.14 interpreter is not supported by that Django release.
+Every other pin in `requirements.txt` is the newest release that still
+supports Django 5.0; see ARCHITECTURE.md, "Django is pinned to 5.0", before
+bumping any of them.
 
 ```bash
 # 1. Environment

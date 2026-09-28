@@ -42,9 +42,9 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          # Pinned to the version the team develops on — two Django/Python
-          # versions have already touched this repo.
-          python-version: "3.14"
+          # Django 5.0 supports Python 3.10–3.12 only; 3.12 is the newest it
+          # supports. Keep this in step with the Django pin in requirements.txt.
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies

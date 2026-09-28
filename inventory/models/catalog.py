@@ -115,15 +115,15 @@ class Book(TimeStampedModel):
         ordering = ["title"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(mrp__gte=0) | models.Q(mrp__isnull=True),
+                check=models.Q(mrp__gte=0) | models.Q(mrp__isnull=True),
                 name="book_mrp_not_negative",
             ),
             models.CheckConstraint(
-                condition=models.Q(tax_percent__gte=0) & models.Q(tax_percent__lte=100),
+                check=models.Q(tax_percent__gte=0) & models.Q(tax_percent__lte=100),
                 name="book_tax_percent_in_range",
             ),
             models.CheckConstraint(
-                condition=models.Q(default_discount_percent__gte=0)
+                check=models.Q(default_discount_percent__gte=0)
                 & models.Q(default_discount_percent__lte=100),
                 name="book_discount_percent_in_range",
             ),
