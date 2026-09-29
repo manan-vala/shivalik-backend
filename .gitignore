@@ -11,6 +11,7 @@ env/
 
 # Environment Variables
 .env
+.env.prod
 
 # Database
 db.sqlite3
