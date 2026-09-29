@@ -45,6 +45,24 @@ raises `ValidationError` itself for anything a caller got wrong. Database
 constraints behind it raise `IntegrityError`, which DRF reports as a 500 — so
 guards belong in the engine, not only in a serializer.
 
+## Django is pinned to 5.0
+
+`requirements.txt` pins Django 5.0.14 and Python 3.12 (the newest Python that
+Django 5.0 supports). Two consequences:
+
+- **`CheckConstraint` takes `check=`, not `condition=`.** `condition=` only
+  exists from Django 5.1; on 5.0 it is a `TypeError` the moment the models
+  or migrations are imported. If you run `makemigrations` under a newer
+  Django by accident, it writes `condition=` into the migration — install
+  from `requirements.txt` in a fresh virtualenv before generating one.
+  `UniqueConstraint(condition=...)` is a different, older API and is fine.
+- **Library pins are capped by Django 5.0.** DRF 3.18+, django-filter 25.2+
+  and pytest-django 4.12–4.13 require a newer Django. Check a release's
+  supported Django versions before bumping it.
+
+Django 5.0 is past its end of support (final release 5.0.14, April 2025) and
+receives no further security fixes.
+
 ## Money is `DecimalField`, never `FloatField`
 
 Currency is INR throughout. `settings.DEFAULT_CURRENCY` records it.
