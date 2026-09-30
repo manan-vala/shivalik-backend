@@ -1,0 +1,31 @@
+# Keeps the build context to source code only. The Dockerfile's `COPY . .`
+# copies everything that is not listed here into the image.
+
+# Environment files. Settings come from the container's environment
+# (docker-compose.prod.yml's `env_file`), never from a file baked into the
+# image — a local `.env` copied in would silently override production.
+.env
+.env.*
+!.env.example
+
+# User uploads (contracts, book covers) are runtime data, not source.
+media/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+ENV/
+
+# Version control
+.git/
+.gitignore
+
+# Local and build clutter
+__pycache__/
+*.py[cod]
+.pytest_cache/
+staticfiles/
+db.sqlite3
+*.sqlite3
+*.log
